@@ -16,7 +16,6 @@ using System.Text.RegularExpressions;
 using System.Threading;
 using System.Windows.Forms;
 using System.Xml;
-using DeltaEngine.Multimedia.VlcToTexture;
 using DotSpatial.Data;
 using DotSpatial.Projections;
 using GMap.NET;
@@ -70,10 +69,10 @@ namespace MissionPlanner
 
         }
 
-        private static Factory factory; 
- 		private static VideoPlayer player; 
- 		private static Renderer renderer; 
- 		private Media media; 
+        //private static Factory factory; 
+ 		//private static VideoPlayer player; 
+ 		//private static Renderer renderer; 
+ 		//private Media media; 
 
 
         private void temp_Load(object sender, EventArgs e)
@@ -167,82 +166,84 @@ namespace MissionPlanner
         {
 
 
-            OpenFileDialog openFileDialog1 = new OpenFileDialog();
-            openFileDialog1.Filter = "EEPROM.bin|*.bin";
-            openFileDialog1.FilterIndex = 2;
-            openFileDialog1.RestoreDirectory = true;
-            openFileDialog1.InitialDirectory = Path.GetDirectoryName(Application.ExecutablePath);
-
-            if (openFileDialog1.ShowDialog() == DialogResult.OK)
+            using (OpenFileDialog openFileDialog1 = new OpenFileDialog())
             {
-                try
+                openFileDialog1.Filter = "EEPROM.bin|*.bin";
+                openFileDialog1.FilterIndex = 2;
+                openFileDialog1.RestoreDirectory = true;
+                openFileDialog1.InitialDirectory = Path.GetDirectoryName(Application.ExecutablePath);
+
+                if (openFileDialog1.ShowDialog() == DialogResult.OK)
                 {
-                    StreamReader sr = new StreamReader(openFileDialog1.FileName);
-                    BinaryReader br = new BinaryReader(sr.BaseStream);
-                    byte[] EEPROM = br.ReadBytes(1024 * 4);
-                    br.Close();
-                    sr.Close();
-
-                    IArduinoComms port = new ArduinoSTK();
-
-                    if (DialogResult.Yes == CustomMessageBox.Show("is this a 1280?", "", MessageBoxButtons.YesNo))
+                    try
                     {
-                        port = new ArduinoSTK();
-                        port.BaudRate = 57600;
-                    }
-                    else
-                    {
-                        port = new ArduinoSTKv2();
-                        port.BaudRate = 115200;
-                    }
+                        StreamReader sr = new StreamReader(openFileDialog1.FileName);
+                        BinaryReader br = new BinaryReader(sr.BaseStream);
+                        byte[] EEPROM = br.ReadBytes(1024 * 4);
+                        br.Close();
+                        sr.Close();
 
-            port.DataBits = 8;
-            port.StopBits = StopBits.One;
-            port.Parity = Parity.None;
-            port.DtrEnable = true;
+                        IArduinoComms port = new ArduinoSTK();
 
-            port.PortName = MainV2.comPortName;
-            try
-            {
-                port.Open();
-
-                if (port.connectAP())
-                {
-                    // waypoints
-                    int start = 0;
-                    int end = 1024*4;
-
-                        log.Info(start + " to " + end);
-                        port.upload(EEPROM, (short)start, (short)(end - start), (short)start);
-
-                        if (port.keepalive())
+                        if (DialogResult.Yes == CustomMessageBox.Show("is this a 1280?", "", MessageBoxButtons.YesNo))
                         {
-                            // Config
-
-                            if (port.keepalive())
-                            {
-                                Thread.Sleep(2000);
-                                //MessageBox.Show("Upload Completed");
-                            }
-                            else
-                            {
-                                CustomMessageBox.Show("Communication Error - WPs wrote but no config");
-                            }
+                            port = new ArduinoSTK();
+                            port.BaudRate = 57600;
                         }
                         else
                         {
-                            CustomMessageBox.Show("Communication Error - Bad data");
+                            port = new ArduinoSTKv2();
+                            port.BaudRate = 115200;
                         }
+
+                        port.DataBits = 8;
+                        port.StopBits = StopBits.One;
+                        port.Parity = Parity.None;
+                        port.DtrEnable = true;
+
+                        port.PortName = MainV2.comPortName;
+                        try
+                        {
+                            port.Open();
+
+                            if (port.connectAP())
+                            {
+                                // waypoints
+                                int start = 0;
+                                int end = 1024 * 4;
+
+                                log.Info(start + " to " + end);
+                                port.upload(EEPROM, (short)start, (short)(end - start), (short)start);
+
+                                if (port.keepalive())
+                                {
+                                    // Config
+
+                                    if (port.keepalive())
+                                    {
+                                        Thread.Sleep(2000);
+                                        //MessageBox.Show("Upload Completed");
+                                    }
+                                    else
+                                    {
+                                        CustomMessageBox.Show("Communication Error - WPs wrote but no config");
+                                    }
+                                }
+                                else
+                                {
+                                    CustomMessageBox.Show("Communication Error - Bad data");
+                                }
+                            }
+                            else
+                            {
+                                CustomMessageBox.Show("Communication Error - no connection");
+                            }
+                            port.Close();
+                        }
+                        catch (Exception ex) { CustomMessageBox.Show("Port in use? " + ex.ToString()); port.Close(); }
+                    }
+                    catch (Exception) { CustomMessageBox.Show("Error reading file"); }
                 }
-                else
-                {
-                    CustomMessageBox.Show("Communication Error - no connection");
-                }
-                port.Close();
-            }
-            catch (Exception ex) { CustomMessageBox.Show("Port in use? " + ex.ToString()); port.Close(); }
-                }
-                catch (Exception) { CustomMessageBox.Show("Error reading file"); }
             }
         }
 
@@ -626,191 +627,6 @@ namespace MissionPlanner
 
         }
 
-        private void BUT_copy1280_Click(object sender, EventArgs e)
-        {
-            ArduinoSTK port = new ArduinoSTK();
-            port.BaudRate = 57600;
-            port.DataBits = 8;
-            port.StopBits = StopBits.One;
-            port.Parity = Parity.None;
-            port.DtrEnable = true;
-
-            try
-            {
-                port.PortName = MainV2.comPortName;
-
-                log.Info("Open Port");
-                port.Open();
-                log.Info("Connect AP");
-                if (port.connectAP())
-                {
-                    log.Info("Download AP");
-                    byte[] EEPROM = new byte[1024 * 4];
-
-                    for (int a = 0; a < 4 * 1024; a += 0x100)
-                    {
-                        port.setaddress(a);
-                        port.download(0x100).CopyTo(EEPROM, a);
-                    }
-                    log.Info("Verify State");
-                    if (port.keepalive())
-                    {
-                        StreamWriter sw = new StreamWriter(Path.GetDirectoryName(Application.ExecutablePath) + Path.DirectorySeparatorChar + @"EEPROM1280.bin");
-                        BinaryWriter bw = new BinaryWriter(sw.BaseStream);
-                        bw.Write(EEPROM, 0, EEPROM.Length);
-                        bw.Close();
-
-                        log.Info("Download AP");
-                        byte[] FLASH = new byte[1024 * 128];
-
-                        for (int a = 0; a < FLASH.Length; a += 0x100)
-                        {
-                            port.setaddress(a);
-                            port.downloadflash(0x100).CopyTo(FLASH, a);
-                        }
-
-                        sw = new StreamWriter(Path.GetDirectoryName(Application.ExecutablePath) + Path.DirectorySeparatorChar + @"FLASH1280.bin");
-                        bw = new BinaryWriter(sw.BaseStream);
-                        bw.Write(FLASH, 0, FLASH.Length);
-                        bw.Close();
-
-                    }
-                    else
-                    {
-                        CustomMessageBox.Show("Communication Error - Bad data");
-                    }
-                }
-                else
-                {
-                    CustomMessageBox.Show("Communication Error - no connection");
-                }
-                port.Close();
-            }
-            catch (Exception ex) { CustomMessageBox.Show("Port Error? " + ex.ToString()); if (port != null && port.IsOpen) { port.Close(); } }
-            
-        }
-
-        private void BUT_copy2560_Click(object sender, EventArgs e)
-        {
-            ArduinoSTKv2 port = new ArduinoSTKv2();
-            port.BaudRate = 115200;
-            port.DataBits = 8;
-            port.StopBits = StopBits.One;
-            port.Parity = Parity.None;
-            port.DtrEnable = true;
-
-            try
-            {
-                port.PortName = MainV2.comPortName;
-
-                log.Info("Open Port");
-                port.Open();
-                log.Info("Connect AP");
-                if (port.connectAP())
-                {
-                    log.Info("Download AP");
-                    byte[] EEPROM = new byte[1024 * 4];
-
-                    for (int a = 0; a < EEPROM.Length; a += 0x100)
-                    {
-                        port.setaddress(a);
-                        port.download(0x100).CopyTo(EEPROM, a);
-                    }
-                    log.Info("Verify State");
-                    if (port.keepalive())
-                    {
-                        StreamWriter sw = new StreamWriter(Path.GetDirectoryName(Application.ExecutablePath) + Path.DirectorySeparatorChar + @"EEPROM2560.bin");
-                        BinaryWriter bw = new BinaryWriter(sw.BaseStream);
-                        bw.Write(EEPROM, 0, EEPROM.Length);
-                        bw.Close();
-
-                        log.Info("Download AP");
-                        byte[] FLASH = new byte[1024 * 256];
-
-                        for (int a = 0; a < FLASH.Length; a += 0x100)
-                        {
-                            port.setaddress(a);
-                            port.downloadflash(0x100).CopyTo(FLASH, a);
-                        }
-
-                        sw = new StreamWriter(Path.GetDirectoryName(Application.ExecutablePath) + Path.DirectorySeparatorChar + @"FLASH2560.bin");
-                        bw = new BinaryWriter(sw.BaseStream);
-                        bw.Write(FLASH, 0, FLASH.Length);
-                        bw.Close();
-
-                    }
-                    else
-                    {
-                        CustomMessageBox.Show("Communication Error - Bad data");
-                    }
-                }
-                else
-                {
-                    CustomMessageBox.Show("Communication Error - no connection");
-                }
-                port.Close();
-            }
-            catch (Exception ex) { CustomMessageBox.Show("Port Error? " + ex.ToString()); if (port != null && port.IsOpen) { port.Close(); } }
-        }
-
-        private void BUT_copyto1280_Click(object sender, EventArgs e)
-        {
-            IArduinoComms port = new ArduinoSTK();
-
-            port.BaudRate = 57600;
-
-            port.DataBits = 8;
-            port.StopBits = StopBits.One;
-            port.Parity = Parity.None;
-            port.DtrEnable = true;
-
-            StreamReader sr = new StreamReader(Path.GetDirectoryName(Application.ExecutablePath) + Path.DirectorySeparatorChar + @"EEPROM1280.bin");
-            BinaryReader br = new BinaryReader(sr.BaseStream);
-            byte[] EEPROM = br.ReadBytes(1024 * 4);
-            br.Close();
-            sr.Close();
-
-            sr = new StreamReader(Path.GetDirectoryName(Application.ExecutablePath) + Path.DirectorySeparatorChar + @"FLASH1280.bin");
-            br = new BinaryReader(sr.BaseStream);
-            byte[] FLASH = br.ReadBytes(1024 * 128);
-            br.Close();
-            sr.Close();
-
-            try
-            {
-                port.PortName = MainV2.comPortName;
-
-                port.Open();
-
-
-
-                if (port.connectAP())
-                {
-                    log.Info("starting");
-
-
-                    port.uploadflash(FLASH, 0, FLASH.Length, 0);
-
-                    port.upload(EEPROM, 0, (short)EEPROM.Length, 0);
-
-
-                    log.Info("Uploaded");
-
-
-                }
-                else
-                {
-
-                    CustomMessageBox.Show("Communication Error - no connection");
-                }
-                port.Close();
-
-
-
-            }
-            catch (Exception ex) { CustomMessageBox.Show("Check port settings or Port in use? " + ex.ToString()); port.Close(); }
-        }
-
         private void button2_Click(object sender, EventArgs e)
         {
             byte[] FLASH = new byte[1];
@@ -927,7 +743,7 @@ namespace MissionPlanner
 
         private void BUT_georefimage_Click(object sender, EventArgs e)
         {
-            new Georefimage().Show();
+            new GeoRef.Georefimage().Show();
         }
 
         private void BUT_follow_me_Click(object sender, EventArgs e)
@@ -982,19 +798,21 @@ namespace MissionPlanner
 
         private void BUT_magfit_Click(object sender, EventArgs e)
         {
-            OpenFileDialog ofd = new OpenFileDialog();
-            ofd.Filter = "t Log|*.tlog";
+            using (OpenFileDialog ofd = new OpenFileDialog())
+            {
+                ofd.Filter = "t Log|*.tlog";
 
-            ofd.ShowDialog();
+                ofd.ShowDialog();
 
-            var com = new CommsFile();
-            com.Open(ofd.FileName);
+                var com = new CommsFile();
+                com.Open(ofd.FileName);
 
-            MainV2.comPort.BaseStream = com;
+                MainV2.comPort.BaseStream = com;
 
-            MagCalib.DoGUIMagCalib(false);
+                MagCalib.DoGUIMagCalib(false);
 
-            //MagCalib.ProcessLog(0);
+                //MagCalib.ProcessLog(0);
+            }
         }
 
         private void but_multimav_Click(object sender, EventArgs e)
@@ -1023,20 +841,11 @@ namespace MissionPlanner
 
             MainV2.Comports.Add(com2);
 
-            CMB_mavs.DataSource = MainV2.Comports;
+            
 
 
         }
 
-        private void CMB_mavs_SelectedIndexChanged(object sender, EventArgs e)
-        {
-            foreach (var port in MainV2.Comports) {
-
-                if (port.ToString() == CMB_mavs.Text) {
-                    MainV2.comPort = port;
-                }
-            }
-        }
 
         private void BUT_swarm_Click(object sender, EventArgs e)
         {
@@ -1073,21 +882,25 @@ namespace MissionPlanner
 
         private void BUT_fwren_Click(object sender, EventArgs e)
         {
-            OpenFileDialog ofd = new OpenFileDialog();
-            ofd.Filter = "Binary Log|*.bin";
-
-            ofd.ShowDialog();
-
-            if (File.Exists(ofd.FileName))
+            using (OpenFileDialog ofd = new OpenFileDialog())
             {
-                SaveFileDialog sfd = new SaveFileDialog();
-                sfd.Filter = "log|*.log";
+                ofd.Filter = "Binary Log|*.bin";
 
-                DialogResult res = sfd.ShowDialog();
+                ofd.ShowDialog();
 
-                if (res == DialogResult.OK)
+                if (File.Exists(ofd.FileName))
                 {
-                    BinaryLog.ConvertBin(ofd.FileName, sfd.FileName);
+                    using (SaveFileDialog sfd = new SaveFileDialog())
+                    {
+                        sfd.Filter = "log|*.log";
+
+                        DialogResult res = sfd.ShowDialog();
+
+                        if (res == DialogResult.OK)
+                        {
+                            BinaryLog.ConvertBin(ofd.FileName, sfd.FileName);
+                        }
+                    }
                 }
             }
         }
@@ -1126,8 +939,8 @@ namespace MissionPlanner
         {
             try
             {
-                if (renderer != null && renderer.CurrentFrame != null)
-                    FlightData.myhud.bgimage = renderer.CurrentFrame;
+                //if (renderer != null && renderer.CurrentFrame != null)
+                  //  FlightData.myhud.bgimage = renderer.CurrentFrame;
             }
             catch
             {
@@ -1155,8 +968,6 @@ namespace MissionPlanner
             Directory.CreateDirectory(basedir);
 
             Firmware fw = new Firmware();
-
-            string betafirmwareurl = "https://raw.github.com/diydrones/binary/master/dev/firmware2.xml";
 
             var list = fw.getFWList();
 
@@ -1282,25 +1093,27 @@ namespace MissionPlanner
 
         private void but_loganalysis_Click(object sender, EventArgs e)
         {
-            OpenFileDialog ofd = new OpenFileDialog();
-
-            ofd.ShowDialog();
-
-            if (ofd.FileName != "")
+            using (OpenFileDialog ofd = new OpenFileDialog())
             {
-                string xmlfile = LogAnalyzer.CheckLogFile(ofd.FileName);
 
-                if (File.Exists(xmlfile))
+                ofd.ShowDialog();
+
+                if (ofd.FileName != "")
                 {
-                    var out1 = LogAnalyzer.Results(xmlfile);
+                    string xmlfile = LogAnalyzer.CheckLogFile(ofd.FileName);
 
-                    Controls.LogAnalyzer frm = new Controls.LogAnalyzer(out1);
+                    if (File.Exists(xmlfile))
+                    {
+                        var out1 = LogAnalyzer.Results(xmlfile);
 
-                    frm.Show();
-                }
-                else
-                {
-                    CustomMessageBox.Show("Bad input file");
+                        Controls.LogAnalyzer frm = new Controls.LogAnalyzer(out1);
+
+                        frm.Show();
+                    }
+                    else
+                    {
+                        CustomMessageBox.Show("Bad input file");
+                    }
                 }
             }
         }
@@ -1397,126 +1210,130 @@ namespace MissionPlanner
 
         private void BUT_shptopoly_Click(object sender, EventArgs e)
         {
-            OpenFileDialog fd = new OpenFileDialog();
-            fd.Filter = "Shape file|*.shp";
-            DialogResult result = fd.ShowDialog();
-            string file = fd.FileName;
-
-            ProjectionInfo pStart = new ProjectionInfo();
-            ProjectionInfo pESRIEnd = KnownCoordinateSystems.Geographic.World.WGS1984;
-            bool reproject = false;
-
-            if (File.Exists(file))
+            using (OpenFileDialog fd = new OpenFileDialog())
             {
-                string prjfile = Path.GetDirectoryName(file) + Path.DirectorySeparatorChar + Path.GetFileNameWithoutExtension(file) + ".prj";
-                if (File.Exists(prjfile))
-                {
+                fd.Filter = "Shape file|*.shp";
+                DialogResult result = fd.ShowDialog();
+                string file = fd.FileName;
 
-                    using (StreamReader re = File.OpenText(Path.GetDirectoryName(file) + Path.DirectorySeparatorChar + Path.GetFileNameWithoutExtension(file) + ".prj"))
+                ProjectionInfo pStart = new ProjectionInfo();
+                ProjectionInfo pESRIEnd = KnownCoordinateSystems.Geographic.World.WGS1984;
+                bool reproject = false;
+
+                if (File.Exists(file))
+                {
+                    string prjfile = Path.GetDirectoryName(file) + Path.DirectorySeparatorChar + Path.GetFileNameWithoutExtension(file) + ".prj";
+                    if (File.Exists(prjfile))
                     {
-                        pStart.ParseEsriString(re.ReadLine());
 
-                        reproject = true;
-                    }
-                }
-
-                IFeatureSet fs = FeatureSet.Open(file);
-
-                fs.FillAttributes();
-
-                int rows = fs.NumRows();
-
-                DataTable dtOriginal = fs.DataTable;
-                for (int row = 0; row < dtOriginal.Rows.Count; row++)
-                {
-                    object[] original = dtOriginal.Rows[row].ItemArray;
-                }
-
-                foreach (DataColumn col in dtOriginal.Columns)
-                {
-                    Console.WriteLine(col.ColumnName + " " + col.DataType.ToString());
-                }
-
-                int a = 1;
-
-                string path = Path.GetDirectoryName(file);
-
-                foreach (var feature in fs.Features)
-                {
-                    StringBuilder sb = new StringBuilder();
-
-                    sb.Append("#Shap to Poly - Mission Planner\r\n");
-                    foreach (var point in feature.Coordinates)
-                    {
-                        if (reproject)
+                        using (StreamReader re = File.OpenText(Path.GetDirectoryName(file) + Path.DirectorySeparatorChar + Path.GetFileNameWithoutExtension(file) + ".prj"))
                         {
-                            double[] xyarray = { point.X, point.Y };
-                            double[] zarray = { point.Z };
+                            pStart.ParseEsriString(re.ReadLine());
 
-                            Reproject.ReprojectPoints(xyarray, zarray, pStart, pESRIEnd, 0, 1);
+                            reproject = true;
+                        }
+                    }
 
-                            point.X = xyarray[0];
-                            point.Y = xyarray[1];
-                            point.Z = zarray[0];
+                    IFeatureSet fs = FeatureSet.Open(file);
+
+                    fs.FillAttributes();
+
+                    int rows = fs.NumRows();
+
+                    DataTable dtOriginal = fs.DataTable;
+                    for (int row = 0; row < dtOriginal.Rows.Count; row++)
+                    {
+                        object[] original = dtOriginal.Rows[row].ItemArray;
+                    }
+
+                    foreach (DataColumn col in dtOriginal.Columns)
+                    {
+                        Console.WriteLine(col.ColumnName + " " + col.DataType.ToString());
+                    }
+
+                    int a = 1;
+
+                    string path = Path.GetDirectoryName(file);
+
+                    foreach (var feature in fs.Features)
+                    {
+                        StringBuilder sb = new StringBuilder();
+
+                        sb.Append("#Shap to Poly - Mission Planner\r\n");
+                        foreach (var point in feature.Coordinates)
+                        {
+                            if (reproject)
+                            {
+                                double[] xyarray = { point.X, point.Y };
+                                double[] zarray = { point.Z };
+
+                                Reproject.ReprojectPoints(xyarray, zarray, pStart, pESRIEnd, 0, 1);
+
+                                point.X = xyarray[0];
+                                point.Y = xyarray[1];
+                                point.Z = zarray[0];
+                            }
+
+                            sb.Append(point.Y.ToString(CultureInfo.InvariantCulture) + "\t" + point.X.ToString(CultureInfo.InvariantCulture) + "\r\n");
                         }
 
-                        sb.Append(point.Y.ToString(CultureInfo.InvariantCulture) + "\t" + point.X.ToString(CultureInfo.InvariantCulture) + "\r\n");
+                        log.Info("writting poly to " + path + Path.DirectorySeparatorChar + "poly-" + a + ".poly");
+                        File.WriteAllText(path + Path.DirectorySeparatorChar + "poly-" + a + ".poly", sb.ToString());
+
+                        a++;
                     }
-
-                    log.Info("writting poly to " + path + Path.DirectorySeparatorChar + "poly-" + a + ".poly");
-                    File.WriteAllText(path + Path.DirectorySeparatorChar + "poly-" + a + ".poly", sb.ToString());
-
-                    a++;
                 }
             }
         }
 
         private void but_droneshare_Click(object sender, EventArgs e)
         {
-            OpenFileDialog ofd = new OpenFileDialog();
-            ofd.Filter = "tlog|*.tlog|*.log|*.log";
-            ofd.Multiselect = true;
-            ofd.ShowDialog();
-
-            string droneshareusername = MainV2.getConfig("droneshareusername");
-
-            InputBox.Show("Username", "Username", ref droneshareusername);
-
-            MainV2.config["droneshareusername"] = droneshareusername;
-
-            string dronesharepassword = MainV2.getConfig("dronesharepassword");
-
-            if (dronesharepassword != "")
+            using (OpenFileDialog ofd = new OpenFileDialog())
             {
-                try
+                ofd.Filter = "tlog|*.tlog|*.log|*.log";
+                ofd.Multiselect = true;
+                ofd.ShowDialog();
+
+                string droneshareusername = MainV2.getConfig("droneshareusername");
+
+                InputBox.Show("Username", "Username", ref droneshareusername);
+
+                MainV2.config["droneshareusername"] = droneshareusername;
+
+                string dronesharepassword = MainV2.getConfig("dronesharepassword");
+
+                if (dronesharepassword != "")
                 {
-                    // fail on bad entry
-                    var crypto = new Crypto();
-                    dronesharepassword = crypto.DecryptString(dronesharepassword);
+                    try
+                    {
+                        // fail on bad entry
+                        var crypto = new Crypto();
+                        dronesharepassword = crypto.DecryptString(dronesharepassword);
+                    }
+                    catch { }
                 }
-                catch { }
-            }
 
-            InputBox.Show("Password", "Password", ref dronesharepassword,true);
+                InputBox.Show("Password", "Password", ref dronesharepassword, true);
 
-            var crypto2 = new Crypto();
+                var crypto2 = new Crypto();
 
-            string encryptedpw = crypto2.EncryptString(dronesharepassword);
+                string encryptedpw = crypto2.EncryptString(dronesharepassword);
 
-            MainV2.config["dronesharepassword"] = encryptedpw;            
+                MainV2.config["dronesharepassword"] = encryptedpw;
 
-            if (File.Exists(ofd.FileName)) 
-            {
-                foreach (var file in ofd.FileNames) 
+                if (File.Exists(ofd.FileName))
                 {
-                    string viewurl = droneshare.doUpload(file, droneshareusername, dronesharepassword, Guid.NewGuid().ToString(), APIConstants.apiKey);
+                    foreach (var file in ofd.FileNames)
+                    {
+                        string viewurl = droneshare.doUpload(file, droneshareusername, dronesharepassword, Guid.NewGuid().ToString());
 
-                    if (viewurl != "")
-                        Process.Start(viewurl);
+                        if (viewurl != "")
+                            Process.Start(viewurl);
+                    }
                 }
-            }
 
-            dronesharepassword = null;
+                dronesharepassword = null;
+            }
         }
 
         String SecureStringToString(SecureString value)
@@ -1684,7 +1501,7 @@ namespace MissionPlanner
         {
             try
             {
-                player.Stop();
+                //player.Stop();
             }
             catch
             {
@@ -1694,6 +1511,7 @@ namespace MissionPlanner
 
         private void but_rtspurl_Click(object sender, EventArgs e)
         {
+            /*
             string url = "rtsp://192.168.1.252/";
             InputBox.Show("video address", "enter video address", ref url);
 
@@ -1710,6 +1528,62 @@ namespace MissionPlanner
             renderer.SetFormat(new BitmapFormat(512, 512, ChromaType.RV32));
 
             player.Play();
+             */
+        }
+
+        private void but_armandtakeoff_Click(object sender, EventArgs e)
+        {
+            MainV2.comPort.setMode("Stabilize");
+
+            if (MainV2.comPort.doARM(true))
+            {
+                MainV2.comPort.setMode("GUIDED");
+
+                System.Threading.Thread.Sleep(300);
+
+                MainV2.comPort.doCommand(MAVLink.MAV_CMD.TAKEOFF, 0, 0, 0, 0, 0, 0, 10);
+            }
+        }
+
+        private void but_sitl_comb_Click(object sender, EventArgs e)
+        {
+            Utilities.StreamCombiner.Start();
+        }
+
+        private void but_injectgps_Click(object sender, EventArgs e)
+        {
+            new SerialInjectGPS().Show();
+        }
+
+        private void BUT_fft_Click(object sender, EventArgs e)
+        {
+            Utilities.fftui fft = new fftui();
+
+            fft.Show();
+        }
+
+        private void BUT_vib_Click(object sender, EventArgs e)
+        {
+            Controls.Vibration vib = new Vibration();
+
+            vib.Show();
+        }
+
+        private void but_reboot_Click(object sender, EventArgs e)
+        {
+            MainV2.comPort.doReboot(false);
+        }
+
+        private void BUT_QNH_Click(object sender, EventArgs e)
+        {
+            string currentQNH = MainV2.comPort.GetParam("GND_ABS_PRESS").ToString();
+
+            if (InputBox.Show("QNH", "Enter the QNH in pascals (103040 = 1030.4 hPa)", ref currentQNH) == DialogResult.OK)
+            {
+                double newQNH = double.Parse(currentQNH);
+
+                MainV2.comPort.setParam("GND_ABS_PRESS", newQNH);
+            }
         }
     }
 }

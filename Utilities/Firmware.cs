@@ -140,6 +140,8 @@ namespace MissionPlanner.Utilities
                     a++;
                 }
             }
+
+            System.Threading.Thread.CurrentThread.CurrentUICulture = L10N.ConfigLang;
         }
 
         /// <summary>
@@ -152,7 +154,7 @@ namespace MissionPlanner.Utilities
                 firmwareurl = this.firmwareurl;
 
             // mirror support
-            ReplaceMirrorUrl(ref firmwareurl);
+            L10N.ReplaceMirrorUrl(ref firmwareurl);
 
             log.Info("getFWList");
 
@@ -381,6 +383,8 @@ namespace MissionPlanner.Utilities
         /// <returns></returns>
         void getAPMVersion(object tempin)
         {
+            System.Threading.Thread.CurrentThread.CurrentUICulture = L10N.ConfigLang;
+
             try
             {
 
@@ -390,7 +394,7 @@ namespace MissionPlanner.Utilities
 
                 if (baseurl == "") return;
 
-                ReplaceMirrorUrl(ref baseurl);
+                L10N.ReplaceMirrorUrl(ref baseurl);
 
                 Uri url = new Uri(new Uri(baseurl), "git-version.txt");
 
@@ -554,7 +558,7 @@ namespace MissionPlanner.Utilities
                 {
                     if (temp.name.ToLower().Contains("arducopter")) 
                     {
-                        CustomMessageBox.Show("This board has been retired, Mission Planner this will upload the last available version to your board","Note");
+                        CustomMessageBox.Show(Strings.ThisBoardHasBeenRetired,Strings.Note);
                     }
                 }
 
@@ -562,7 +566,7 @@ namespace MissionPlanner.Utilities
                     baseurl = getUrl(historyhash, baseurl);
 
                 // update to use mirror url
-                ReplaceMirrorUrl(ref baseurl);
+                L10N.ReplaceMirrorUrl(ref baseurl);
 
                 log.Info("Using " + baseurl);
 
@@ -682,13 +686,13 @@ namespace MissionPlanner.Utilities
                 else
                 {
                     MainV2.comPort.BaseStream.Close();
-                    CustomMessageBox.Show("Please unplug the board, and then press OK and plug back in.\nMission Planner will look for 30 seconds to find the board");
+                    CustomMessageBox.Show(Strings.PleaseUnplugTheBoardAnd);
                 }
             }
             catch (Exception ex)
             {
                 log.Error(ex);
-                CustomMessageBox.Show("Please unplug the board, and then press OK and plug back in.\nMission Planner will look for 30 seconds to find the board");
+                CustomMessageBox.Show(Strings.PleaseUnplugTheBoardAnd);
             }
 
             DateTime DEADLINE = DateTime.Now.AddSeconds(30);
@@ -738,58 +742,6 @@ namespace MissionPlanner.Utilities
 
                     try
                     {
-                        up.verifyotp();
-
-                        if (up.libre)
-                        {
-                            MissionPlanner.Utilities.Tracking.AddEvent("FWUpload", "verifyotp", "libre", "");
-                        }
-                        else 
-                        {
-                            MissionPlanner.Utilities.Tracking.AddEvent("FWUpload", "verifyotp", "Pass", "");
-                        }
-                    }
-                    catch (Org.BouncyCastle.Security.InvalidKeyException ex) 
-                    {
-                        MissionPlanner.Utilities.Tracking.AddEvent("FWUpload", "verifyotp","InvalidKeyException","");
-                        log.Error(ex);
-                        CustomMessageBox.Show("You are using unsupported hardware.\nThis board does not contain a valid certificate of authenticity.\nPlease contact your hardware vendor about signing your hardware.", "Invalid Cert"); 
-                        up.skipotp = true;
-                    }
-                    catch (FormatException ex)
-                    {
-                        MissionPlanner.Utilities.Tracking.AddEvent("FWUpload", "verifyotp", "FormatException", "");
-                        log.Error(ex);
-                        CustomMessageBox.Show("You are using unsupported hardware.\nThis board does not contain a valid certificate of authenticity.\nPlease contact your hardware vendor about signing your hardware.", "Invalid Cert");
-                        up.skipotp = true;
-                    }
-                    catch (IOException ex) 
-                    {
-                        MissionPlanner.Utilities.Tracking.AddEvent("FWUpload", "verifyotp", "IOException", "");
-                        log.Error(ex);
-                        CustomMessageBox.Show("lost communication with the board.", "lost comms");
-                        up.close();
-                        return false;
-                    }
-                    catch (TimeoutException ex)
-                    {
-                        MissionPlanner.Utilities.Tracking.AddEvent("FWUpload", "verifyotp", "TimeoutException", "");
-                        log.Error(ex);
-                        CustomMessageBox.Show("lost communication with the board.", "lost comms");
-                        up.close();
-                        return false;
-                    }
-                    catch (Exception ex)
-                    {
-                        MissionPlanner.Utilities.Tracking.AddEvent("FWUpload", "verifyotp", "Exception", "");
-                        log.Error(ex);
-                        CustomMessageBox.Show("lost communication with the board. " + ex.ToString(), "lost comms");
-                        up.close();
-                        return false;
-                    }
-
-                    try
-                    {
                         up.currentChecksum(fw);
                     }
                     catch (IOException ex)
@@ -803,7 +755,7 @@ namespace MissionPlanner.Utilities
                     {
                         up.__reboot();
                         up.close();
-                        CustomMessageBox.Show("No need to upload. already on the board");
+                        CustomMessageBox.Show(Strings.NoNeedToUpload);
                         return true;
                     }
 
@@ -826,7 +778,7 @@ namespace MissionPlanner.Utilities
                     }
 
                     // wait for IO firmware upgrade and boot to a mavlink state
-                    CustomMessageBox.Show("Please wait for the musical tones to finish before clicking OK");
+                    CustomMessageBox.Show(Strings.PleaseWaitForTheMusicalTones);
 
                     return true;
                 }
@@ -878,13 +830,13 @@ namespace MissionPlanner.Utilities
                 else
                 {
                     MainV2.comPort.BaseStream.Close();
-                    CustomMessageBox.Show("Please unplug the board, and then press OK and plug back in.\nMission Planner will look for 30 seconds to find the board");
+                    CustomMessageBox.Show(Strings.PleaseUnplugTheBoardAnd);
                 }
             }
             catch (Exception ex)
             {
                 log.Error(ex);
-                CustomMessageBox.Show("Please unplug the board, and then press OK and plug back in.\nMission Planner will look for 30 seconds to find the board");
+                CustomMessageBox.Show(Strings.PleaseUnplugTheBoardAnd);
             }
 
             DateTime DEADLINE = DateTime.Now.AddSeconds(30);
@@ -936,7 +888,7 @@ namespace MissionPlanner.Utilities
                     {
                         up.__reboot();
                         up.close();
-                        CustomMessageBox.Show("No need to upload. already on the board");
+                        CustomMessageBox.Show(Strings.NoNeedToUpload);
                         return true;
                     }
 
@@ -971,7 +923,7 @@ namespace MissionPlanner.Utilities
                     else
                     {
                         // wait for IO firmware upgrade and boot to a mavlink state
-                        CustomMessageBox.Show("Please wait for the musical tones to finish before clicking OK");
+                        CustomMessageBox.Show(Strings.PleaseWaitForTheMusicalTones);
                     }
                     return true;
                 }
@@ -1229,35 +1181,6 @@ namespace MissionPlanner.Utilities
             Array.Resize<byte>(ref FLASH, total);
 
             return FLASH;
-        }
-
-        string ReplaceMirrorUrl(ref string url)
-        {
-            switch (System.Globalization.CultureInfo.CurrentUICulture.Name)
-            {
-                case "zh-CN":
-                case "zh-Hans":
-                    if (url.Contains("raw.github.com"))
-                    {
-                        url = url.Replace("raw.github.com", "githubraw.diywrj.com");
-                    }
-                    else if (url.Contains("firmware.diydrones.com"))
-                    {
-                        url = url.Replace("firmware.diydrones.com", "firmware.diywrj.com");
-                    }
-                    else if (url.Contains("github.com"))
-                    {
-                        url = url.Replace("github.com", "github.diywrj.com");
-                    }
-                    else
-                    {
-                    }
-                    break;
-                default:
-                    break;
-            }
-
-            return url;
         }
     }
 }

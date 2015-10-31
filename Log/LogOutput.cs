@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Drawing;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Reflection;
@@ -30,13 +31,16 @@ namespace MissionPlanner.Log
         Point3D oldlastpos = new Point3D();
         Point3D lastpos = new Point3D();
         List<Data> flightdata = new List<Data>();
+        List<string> gpsrawdata = new List<string>();
         Model runmodel = new Model();
         List<string> modelist = new List<string>();
 
         List<Core.Geometry.Point3D>[] position = new List<Core.Geometry.Point3D>[200];
         int positionindex = 0;
 
-        int doevent = 0;
+        private DateTime doevent = DateTime.Now;
+
+        DFLog dflog = new DFLog();
 
         public struct Data
         {
@@ -47,13 +51,17 @@ namespace MissionPlanner.Log
             public string mode;
         }
 
+        public List<PointLatLngAlt> PosLatLngAlts = new List<PointLatLngAlt>();
+
         public void processLine(string line)
         {
             try
             {
-                doevent++;
-                if ((doevent % 10) == 0)
+                if (doevent.Second != DateTime.Now.Second)
+                {
                     Application.DoEvents();
+                    doevent = DateTime.Now;
+                }
 
                 if (line.Length == 0)
                     return;
@@ -68,6 +76,11 @@ namespace MissionPlanner.Log
                 {
                     MainV2.comPort.MAV.cs.firmware = MainV2.Firmwares.ArduPlane;
                 }
+                if (line.ToLower().Contains("ArduRover"))
+                {
+                    MainV2.comPort.MAV.cs.firmware = MainV2.Firmwares.ArduRover;
+                }
+                
 
                 line = line.Replace(", ", ",");
                 line = line.Replace(": ", ":");
@@ -78,7 +91,7 @@ namespace MissionPlanner.Log
                 {
                     try
                     {
-                        DFLog.FMTLine(line);
+                        dflog.FMTLine(line);
                     }
                     catch { }
                 }
@@ -109,9 +122,12 @@ namespace MissionPlanner.Log
                         modelist[positionindex] = (items[1]);
                     }
                 }
-                else if (items[0].Contains("GPS") && DFLog.logformat.ContainsKey("GPS"))
+                else if (items[0].Contains("GPS") && dflog.logformat.ContainsKey("GPS"))
                 {
-                    if (items[DFLog.FindMessageOffset("GPS", "Status")] != "3")
+                    if (items[0].Contains("GPS2"))
+                        return;
+
+                    if (int.Parse(items[dflog.FindMessageOffset("GPS", "Status")]) < 3)
                         return;
 
                     if (position[positionindex] == null)
@@ -122,11 +138,11 @@ namespace MissionPlanner.Log
 
                     // 7 agl
                     // 8 asl...
-                    double alt = double.Parse(items[DFLog.FindMessageOffset("GPS", "Alt")], new System.Globalization.CultureInfo("en-US"));
+                    double alt = double.Parse(items[dflog.FindMessageOffset("GPS", "Alt")], new System.Globalization.CultureInfo("en-US"));
 
-                    position[positionindex].Add(new Point3D(double.Parse(items[DFLog.FindMessageOffset("GPS", "Lng")],
+                    position[positionindex].Add(new Point3D(double.Parse(items[dflog.FindMessageOffset("GPS", "Lng")],
                         new System.Globalization.CultureInfo("en-US")),
-                        double.Parse(items[DFLog.FindMessageOffset("GPS", "Lat")],
+                        double.Parse(items[dflog.FindMessageOffset("GPS", "Lat")],
                         new System.Globalization.CultureInfo("en-US")), alt));
                     oldlastpos = lastpos;
                     lastpos = (position[positionindex][position[positionindex].Count - 1]);
@@ -208,55 +224,91 @@ namespace MissionPlanner.Log
                     lastpos = (position[positionindex][position[positionindex].Count - 1]);
                     lastline = line;
                 }
-                else if (items[0].Contains("CTUN"))
-                {
-                    ctunlast = items;
-                }
-                else if (items[0].Contains("NTUN"))
-                {
-                    ntunlast = items;
-                    try
-                    {
-                        // line = "ATT:" + double.Parse(ctunlast[3], new System.Globalization.CultureInfo("en-US")) * 100 + "," + double.Parse(ctunlast[6], new System.Globalization.CultureInfo("en-US")) * 100 + "," + double.Parse(items[1], new System.Globalization.CultureInfo("en-US")) * 100;
-                        // items = line.Split(',', ':');
-                    }
-                    catch { }
-                }
-                else if (items[0].Contains("ATT"))
-                {
-                    try
-                    {
-                        if (lastpos.X != 0 && oldlastpos.X != lastpos.X && oldlastpos.Y != lastpos.Y)
-                        {
-                            Data dat = new Data();
+                     else if (items[0].Contains("POS"))
+                     {
+                         if (dflog.logformat.ContainsKey("POS"))
+                         {
+                             int poslatindex = dflog.FindMessageOffset("POS", "Lat");
+                             int poslngindex = dflog.FindMessageOffset("POS", "Lng");
+                             int posaltindex = dflog.FindMessageOffset("POS", "Alt");
 
-                            try
-                            {
-                                dat.datetime = DFLog.GetTimeGPS(lastline);
-                            }
-                            catch { }
+                             PosLatLngAlts.Add(new PointLatLngAlt(double.Parse(items[poslatindex], CultureInfo.InvariantCulture), double.Parse(items[poslngindex], CultureInfo.InvariantCulture), double.Parse(items[posaltindex], CultureInfo.InvariantCulture)));
+                         }
+                     }
+                     else if (items[0].Contains("GRAW"))
+                     {
+                         gpsrawdata.Add(line);
+                     }
+                     else if (items[0].Contains("GRXH"))
+                     {
+                         gpsrawdata.Add(line);
+                     }
+                     else if (items[0].Contains("GRXS"))
+                     {
+                         gpsrawdata.Add(line);
+                     }
+                     else if (items[0].Contains("CTUN"))
+                     {
+                         ctunlast = items;
+                     }
+                     else if (items[0].Contains("NTUN"))
+                     {
+                         ntunlast = items;
+                         try
+                         {
+                             // line = "ATT:" + double.Parse(ctunlast[3], new System.Globalization.CultureInfo("en-US")) * 100 + "," + double.Parse(ctunlast[6], new System.Globalization.CultureInfo("en-US")) * 100 + "," + double.Parse(items[1], new System.Globalization.CultureInfo("en-US")) * 100;
+                             // items = line.Split(',', ':');
+                         }
+                         catch
+                         {
+                         }
+                     }
+                     else if (items[0].Contains("ATT"))
+                     {
+                         try
+                         {
+                             if (lastpos.X != 0 && oldlastpos.X != lastpos.X && oldlastpos.Y != lastpos.Y)
+                             {
+                                 Data dat = new Data();
 
-                            runmodel = new Model();
+                                 try
+                                 {
+                                     dat.datetime = dflog.GetTimeGPS(lastline);
+                                 }
+                                 catch
+                                 {
+                                 }
 
-                            runmodel.Location.longitude = lastpos.X;
-                            runmodel.Location.latitude = lastpos.Y;
-                            runmodel.Location.altitude = lastpos.Z;
+                                 runmodel = new Model();
 
-                            oldlastpos = lastpos;
+                                 runmodel.Location.longitude = lastpos.X;
+                                 runmodel.Location.latitude = lastpos.Y;
+                                 runmodel.Location.altitude = lastpos.Z;
 
-                            runmodel.Orientation.roll = double.Parse(items[DFLog.FindMessageOffset("ATT", "Roll")], new System.Globalization.CultureInfo("en-US")) / -1;
-                            runmodel.Orientation.tilt = double.Parse(items[DFLog.FindMessageOffset("ATT", "Pitch")], new System.Globalization.CultureInfo("en-US")) / -1;
-                            runmodel.Orientation.heading = double.Parse(items[DFLog.FindMessageOffset("ATT", "Yaw")], new System.Globalization.CultureInfo("en-US")) / 1;
+                                 oldlastpos = lastpos;
 
-                            dat.model = runmodel;
-                            dat.ctun = ctunlast;
-                            dat.ntun = ntunlast;
+                                 runmodel.Orientation.roll =
+                                     double.Parse(items[dflog.FindMessageOffset("ATT", "Roll")],
+                                         new System.Globalization.CultureInfo("en-US"))/-1;
+                                 runmodel.Orientation.tilt =
+                                     double.Parse(items[dflog.FindMessageOffset("ATT", "Pitch")],
+                                         new System.Globalization.CultureInfo("en-US"))/-1;
+                                 runmodel.Orientation.heading =
+                                     double.Parse(items[dflog.FindMessageOffset("ATT", "Yaw")],
+                                         new System.Globalization.CultureInfo("en-US"))/1;
 
-                            flightdata.Add(dat);
-                        }
-                    }
-                    catch (Exception ex) { log.Error(ex); }
-                }
+                                 dat.model = runmodel;
+                                 dat.ctun = ctunlast;
+                                 dat.ntun = ntunlast;
+
+                                 flightdata.Add(dat);
+                             }
+                         }
+                         catch (Exception ex)
+                         {
+                             log.Error(ex);
+                         }
+                     }
 
                 if ((DateTime.Now - start).TotalMilliseconds > 5)
                 {
@@ -439,6 +491,183 @@ namespace MissionPlanner.Log
             xw.Close();
         }
 
+        public static DateTime GetFromGps(int weeknumber, double seconds)
+        {
+            DateTime datum = new DateTime(1980, 1, 6, 0, 0, 0, DateTimeKind.Utc);
+            DateTime week = datum.AddDays(weeknumber * 7);
+            DateTime time = week.AddSeconds(seconds);
+            return time;
+        }
+
+        public void writeRinex(string filename)
+        {
+            if (gpsrawdata.Count == 0)
+                return;
+
+            string file = Path.GetDirectoryName(filename) + Path.DirectorySeparatorChar + Path.GetFileNameWithoutExtension(filename) + ".obs";
+
+            var rinexoutput = new StreamWriter(file);
+
+            // 60 chars
+
+            string header = @"     3.02           OBSERVATION DATA    M: Mixed            RINEX VERSION / TYPE
+                                                            MARKER NAME         
+                                                            MARKER NUMBER       
+                                                            MARKER TYPE         
+                                                            OBSERVER / AGENCY   
+                                                            REC # / TYPE / VERS 
+                                                            ANT # / TYPE        
+        0.0000        0.0000        0.0000                  APPROX POSITION XYZ 
+        0.0000        0.0000        0.0000                  ANTENNA: DELTA H/E/N
+G    4 C1C L1C D1C S1C                                      SYS / # / OBS TYPES 
+S    4 C1C L1C D1C S1C                                      SYS / # / OBS TYPES 
+R    4 C1C L1C D1C S1C                                      SYS / # / OBS TYPES 
+E    4 C1C L1C D1C S1C                                      SYS / # / OBS TYPES 
+G                                                           SYS / PHASE SHIFT   
+                                                            END OF HEADER       ";
+
+            rinexoutput.WriteLine(header);
+
+            /*
+            { LOG_GPS_RAW_MSG, sizeof(log_GPS_RAW), \  
+ 690         "GRAW", "QIHBBddfBbB", "TimeUS,WkMS,Week,numSV,sv,cpMes,prMes,doMes,mesQI,cno,lli" }, \  
+       +    { LOG_GPS_RAWH_MSG, sizeof(log_GPS_RAWH), \  
+ 692  +      "GRXH", "QdHbBB", "TimeUS,rcvTime,week,leapS,numMeas,recStat" }, \  
+ 693  +    { LOG_GPS_RAWS_MSG, sizeof(log_GPS_RAWS), \  
+ 694  +      "GRXS", "QddfBBBHBBBBB", "TimeUS,prMes,cpMes,doMes,gnss,sv,freq,lock,cno,prD,cpD,doD,trk" }, \  
+
+            */
+            /*
+GNSS Identifiers
+gnssId GNSS Type
+0 GPS
+1 SBAS
+2 Galileo
+3 BeiDou
+4 IMES
+5 QZSS
+6 GLONASS
+            */
+            //ftp://igs.org/pub/data/format/rinex302.pdf
+            //https://www.u-blox.com/images/downloads/Product_Docs/u-bloxM8_ReceiverDescriptionProtocolSpec_(UBX-13003221)_Public.pdf
+
+            DateTime lastgpstime = DateTime.MinValue;
+
+            double weekms = 0, NSats = 0;
+            int week = 0;
+
+            foreach (string line in gpsrawdata)
+            {
+                string sattype = "G";
+
+                string[] items = line.Split(',', ':');
+
+                double sv = -1, cpMes=-1, prMes=-1, doMes=-1, mesQI=-1, cno=-1, lli=-1;
+                int gnss = 0;
+
+                if (items[0].StartsWith("GRAW"))
+                {
+                    weekms = double.Parse(items[dflog.FindMessageOffset("GRAW", "WkMS")], CultureInfo.InvariantCulture);
+                    week = int.Parse(items[dflog.FindMessageOffset("GRAW", "Week")], CultureInfo.InvariantCulture);
+                    NSats = double.Parse(items[dflog.FindMessageOffset("GRAW", "numSV")], CultureInfo.InvariantCulture);
+                    sv = double.Parse(items[dflog.FindMessageOffset("GRAW", "sv")], CultureInfo.InvariantCulture);
+                    cpMes = double.Parse(items[dflog.FindMessageOffset("GRAW", "cpMes")], CultureInfo.InvariantCulture);
+                    prMes = double.Parse(items[dflog.FindMessageOffset("GRAW", "prMes")], CultureInfo.InvariantCulture);
+                    doMes = double.Parse(items[dflog.FindMessageOffset("GRAW", "doMes")], CultureInfo.InvariantCulture);
+                    mesQI = double.Parse(items[dflog.FindMessageOffset("GRAW", "mesQI")], CultureInfo.InvariantCulture);
+                    cno = double.Parse(items[dflog.FindMessageOffset("GRAW", "cno")], CultureInfo.InvariantCulture);
+                    lli = double.Parse(items[dflog.FindMessageOffset("GRAW", "lli")], CultureInfo.InvariantCulture);
+
+                    if (sv > 32)
+                        gnss = 1;
+                }
+                else if (items[0].StartsWith("GRXH"))
+                {
+                    weekms = double.Parse(items[dflog.FindMessageOffset("GRXH", "rcvTime")], CultureInfo.InvariantCulture) * 1000.0;
+                    week = int.Parse(items[dflog.FindMessageOffset("GRXH", "week")], CultureInfo.InvariantCulture);
+                    NSats = double.Parse(items[dflog.FindMessageOffset("GRXH", "numMeas")], CultureInfo.InvariantCulture);
+                    continue;
+                }
+                else if (items[0].StartsWith("GRXS"))
+                {
+                    sv = double.Parse(items[dflog.FindMessageOffset("GRXS", "sv")], CultureInfo.InvariantCulture);
+                    cpMes = double.Parse(items[dflog.FindMessageOffset("GRXS", "cpMes")], CultureInfo.InvariantCulture);
+                    prMes = double.Parse(items[dflog.FindMessageOffset("GRXS", "prMes")], CultureInfo.InvariantCulture);
+                    doMes = double.Parse(items[dflog.FindMessageOffset("GRXS", "doMes")], CultureInfo.InvariantCulture);
+                    gnss = int.Parse(items[dflog.FindMessageOffset("GRXS", "gnss")], CultureInfo.InvariantCulture);
+                    cno = double.Parse(items[dflog.FindMessageOffset("GRXS", "cno")], CultureInfo.InvariantCulture);
+                    double locktime = double.Parse(items[dflog.FindMessageOffset("GRXS", "lock")], CultureInfo.InvariantCulture);
+                    lli = 0; // OK or not known
+                }
+
+                DateTime gpstime = GetFromGps(week, weekms/1000.0);
+
+                if (week == 0)
+                    continue;
+
+                if (lastgpstime != gpstime)
+                {
+                    rinexoutput.WriteLine("> {0,4} {1,2} {2,2} {3,2} {4,2}{5,11}  {6,1}{7,3}", gpstime.Year, gpstime.Month,
+                        gpstime.Day, gpstime.Hour, gpstime.Minute,
+                        (gpstime.Second + (gpstime.Millisecond / 1000.0)).ToString("0.0000000",
+                            System.Globalization.CultureInfo.InvariantCulture), 0, NSats);
+
+                    lastgpstime = gpstime;
+                }
+
+                if (gnss == 0)
+                {
+                    //GPS
+                    sattype = "G";
+                }
+                if (gnss == 1)
+                {
+                    //sbas
+                    sattype = "S";
+                    sv -= 100;
+                }
+                if (gnss == 2)
+                {
+                    //Galileo
+                    sattype = "E";
+                }
+                if (gnss == 3)
+                {
+                    //BEIDOU
+                    sattype = "C";
+                }
+                if (gnss == 4)
+                {
+                    //IMES
+                    sattype = "I";
+                }
+                if (gnss == 5)
+                {
+                    //QZSS
+                    sattype = "J";
+                    sv -= 192; // check this (100 or 192)
+                }
+                if (gnss == 6)
+                {
+                    //GLONASS
+                    sattype = "R";
+                }
+
+                // a1,i2.2,satcount*(f14.3,i1,i1)
+                rinexoutput.WriteLine("{0}{1,2}{2,14}  {3,14}{4,1} {5,14}  {6,14}  ", sattype, (sv).ToString("00"),
+                    (prMes).ToString("0.000",
+                        System.Globalization.CultureInfo.InvariantCulture),
+                    (cpMes).ToString("0.000", System.Globalization.CultureInfo.InvariantCulture), lli, doMes,
+                    (cno).ToString("0.000",
+                        System.Globalization.CultureInfo.InvariantCulture));
+            }
+        }
+
+        /// <summary>
+        /// abgr
+        /// </summary>
+        /// <param name="hexColor"></param>
+        /// <returns></returns>
         public static Color HexStringToColor(string hexColor)
         {
             string hc = (hexColor);
@@ -474,24 +703,31 @@ namespace MissionPlanner.Log
             return color;
         }
 
+        public bool IsClockwise(IList<Point3D> vertices)
+        {
+            double sum = 0.0;
+            for (int i = 0; i < vertices.Count; i++)
+            {
+                Point3D v1 = vertices[i];
+                Point3D v2 = vertices[(i + 1) % vertices.Count];
+                sum += (v2.X - v1.X) * (v2.Y + v1.Y);
+            }
+            return sum > 0.0;
+        }
 
         public void writeKML(string filename)
         {
             try
             {
                 writeGPX(filename);
+
+                writeRinex(filename);
             }
             catch { }
 
             Color[] colours = { Color.Red, Color.Orange, Color.Yellow, Color.Green, Color.Blue, Color.Indigo, Color.Violet, Color.Pink };
 
             AltitudeMode altmode = AltitudeMode.absolute;
-
-            // all new logs have both agl and asl, we are using asl. this may break old logs
-            // if (MainV2.comPort.MAV.cs.firmware == MainV2.Firmwares.ArduCopter2)
-            {
-                // altmode = AltitudeMode.relativeToGround; // because of sonar, this is both right and wrong. right for sonar, wrong in terms of gps as the land slopes off.
-            }
 
             KMLRoot kml = new KMLRoot();
             Folder fldr = new Folder("Log");
@@ -500,11 +736,17 @@ namespace MissionPlanner.Log
             style.Id = "yellowLineGreenPoly";
             style.Add(new LineStyle(HexStringToColor("7f00ffff"), 4));
 
+            Style style1 = new Style();
+            style1.Id = "spray";
+            style1.Add(new LineStyle(HexStringToColor("4c0000ff"), 0));
+            style1.Add(new PolyStyle() { Color = HexStringToColor("4c0000ff") });
+
             PolyStyle pstyle = new PolyStyle();
             pstyle.Color = HexStringToColor("7f00ff00");
             style.Add(pstyle);
 
             kml.Document.AddStyle(style);
+            kml.Document.AddStyle(style1);
 
             int stylecode = 0xff;
             int g = -1;
@@ -514,6 +756,51 @@ namespace MissionPlanner.Log
                 if (poslist == null)
                     continue;
 
+                /*
+                List<PointLatLngAlt> pllalist = new List<PointLatLngAlt>();
+
+                foreach (var point in poslist)
+                {
+                    pllalist.Add(new PointLatLngAlt(point.Y, point.X, point.Z, ""));
+                }
+
+                var ans = Utilities.LineOffset.GetPolygon(pllalist, 2);
+
+
+
+                while (ans.Count > 0)
+                {
+                    var first = ans[0];
+                    var second = ans[1];
+                    var secondlast = ans[ans.Count - 2];
+                    var last = ans[ans.Count-1];
+
+                    ans.Remove(first);
+                    ans.Remove(last);
+
+                    var polycoords = new BoundaryIs();
+
+                    polycoords.LinearRing = new LinearRing();
+
+                    polycoords.LinearRing.Coordinates.Add(new Point3D(first.Lng, first.Lat, 1));
+                    polycoords.LinearRing.Coordinates.Add(new Point3D(second.Lng, second.Lat, 1));
+                    polycoords.LinearRing.Coordinates.Add(new Point3D(secondlast.Lng, secondlast.Lat, 1));
+                    polycoords.LinearRing.Coordinates.Add(new Point3D(last.Lng, last.Lat, 1));
+                    polycoords.LinearRing.Coordinates.Add(new Point3D(first.Lng, first.Lat, 1));
+
+                    //if (!IsClockwise(polycoords.LinearRing.Coordinates))
+                      //  polycoords.LinearRing.Coordinates.Reverse();
+
+                    Polygon kmlpoly = new Polygon() { AltitudeMode = AltitudeMode.relativeToGround, Extrude = false, OuterBoundaryIs = polycoords };
+
+                    Placemark pmpoly = new Placemark();
+                    pmpoly.Polygon = kmlpoly;
+                    pmpoly.name = g + " test";
+                    pmpoly.styleUrl = "#spray";
+
+                    fldr.Add(pmpoly);
+                }
+                */
                 LineString ls = new LineString();
                 ls.AltitudeMode = altmode;
                 ls.Extrude = true;
@@ -548,6 +835,28 @@ namespace MissionPlanner.Log
                 fldr.Add(pm);
             }
 
+            Placemark pmPOS = new Placemark();
+            pmPOS.name = "POS Message";
+            pmPOS.LineString = new LineString();
+            pmPOS.LineString.coordinates = new Coordinates();
+            Point3D lastPoint3D = new Point3D();
+            PointLatLngAlt lastplla = PointLatLngAlt.Zero;
+            foreach (var item in PosLatLngAlts)
+            {
+                var newpoint = new Point3D(item.Lng, item.Lat, item.Alt);
+
+                if (item.GetDistance(lastplla) < 0.1 &&
+                    lastPoint3D.Z >= (newpoint.Z - 0.3) &&
+                    lastPoint3D.Z <= (newpoint.Z + 0.3)) 
+                    continue;
+
+                pmPOS.LineString.coordinates.Add(newpoint);
+                lastPoint3D = newpoint;
+                lastplla = item;
+            }
+            pmPOS.AddStyle(style);
+            fldr.Add(pmPOS);
+
             Folder planes = new Folder();
             planes.name = "Planes";
             fldr.Add(planes);
@@ -565,6 +874,9 @@ namespace MissionPlanner.Log
 
             foreach (PointLatLngAlt p1 in cmd)
             {
+                if (p1.Lng == 0 && p1.Lat == 0)
+                    continue;
+
                 coordswp.Add(new Point3D(p1.Lng, p1.Lat, p1.Alt));
             }
 
@@ -576,7 +888,8 @@ namespace MissionPlanner.Log
             //pm.styleUrl = "#yellowLineGreenPoly";
             pmwp.LineString = lswp;
 
-            waypoints.Add(pmwp);
+            if (coordswp.Count > 0)
+                waypoints.Add(pmwp);
 
             int a = 0;
             int l = -1;

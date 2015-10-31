@@ -54,6 +54,7 @@ namespace MissionPlanner.Log
             EKF_CHECK = 16,
             FAILSAFE_EKF = 17,
             BARO = 18,
+            CPU = 19,
         }
 
         public enum error_code
@@ -94,6 +95,7 @@ namespace MissionPlanner.Log
             DATA_MAVLINK_INT16 = 3,
             DATA_MAVLINK_INT8 = 4,
             DATA_AP_STATE = 7,
+            DATA_SYSTEM_TIME_SET               = 8,
             DATA_INIT_SIMPLE_BEARING = 9,
             DATA_ARMED = 10,
             DATA_DISARMED = 11,
@@ -132,16 +134,34 @@ namespace MissionPlanner.Log
             DATA_PARACHUTE_DISABLED = 49,
             DATA_PARACHUTE_ENABLED = 50,
             DATA_PARACHUTE_RELEASED = 51,
+            DATA_LANDING_GEAR_DEPLOYED = 52,
+            DATA_LANDING_GEAR_RETRACTED = 53,
+            DATA_MOTORS_EMERGENCY_STOPPED = 54,
+            DATA_MOTORS_EMERGENCY_STOP_CLEARED = 55,
+            DATA_MOTORS_INTERLOCK_DISABLED = 56,
+            DATA_MOTORS_INTERLOCK_ENABLED = 57,
+            DATA_ROTOR_RUNUP_COMPLETE = 58, // Heli only
+            DATA_ROTOR_SPEED_BELOW_CRITICAL = 59, // Heli only
+            DATA_EKF_ALT_RESET = 60,
         }
 
-        public static Dictionary<string, Label> logformat = new Dictionary<string, Label>();
+        public Dictionary<string, Label> logformat = new Dictionary<string, Label>();
 
-        public static void Clear()
+        public void Clear()
         {
             logformat.Clear();
+
+            GC.Collect();
+
+            // current gps time
+            gpstime = DateTime.MinValue;
+            // last time of message
+            lasttime = DateTime.MinValue;
+            // first valid gpstime
+            gpsstarttime = DateTime.MinValue;
         }
 
-        public static DateTime GetFirstGpsTime(string fn)
+        public DateTime GetFirstGpsTime(string fn)
         {
             using (StreamReader sr = new StreamReader(fn)) 
             {
@@ -165,7 +185,7 @@ namespace MissionPlanner.Log
             return DateTime.MinValue;
         }
 
-        public static List<DFItem> ReadLog(string fn)
+        public List<DFItem> ReadLog(string fn)
         {
             List<DFItem> answer = new List<DFItem>();
 
@@ -178,15 +198,15 @@ namespace MissionPlanner.Log
         }
 
         // current gps time
-        static DateTime gpstime = DateTime.MinValue;
+        DateTime gpstime = DateTime.MinValue;
         // last time of message
-        static DateTime lasttime = DateTime.MinValue;
+        DateTime lasttime = DateTime.MinValue;
         // first valid gpstime
-        static DateTime gpsstarttime = DateTime.MinValue;
+        DateTime gpsstarttime = DateTime.MinValue;
 
-        static int msoffset = 0;
+        int msoffset = 0;
 
-        public static List<DFItem> ReadLog(Stream fn)
+        public List<DFItem> ReadLog(Stream fn)
         {
             Clear();
             GC.Collect();
@@ -233,8 +253,8 @@ namespace MissionPlanner.Log
 
             return answer;
         }
-
-        public static DFItem GetDFItemFromLine(string line, int lineno)
+        
+        public DFItem GetDFItemFromLine(string line, int lineno)
         {
 
             //line = line.Replace(",", ",");
@@ -248,20 +268,43 @@ namespace MissionPlanner.Log
             }
             else if (line.StartsWith("GPS"))
             {
-                // if (gpsstarttime == DateTime.MinValue)
+                if (line.StartsWith("GPS") && gpsstarttime == DateTime.MinValue)
                 {
-                    gpsstarttime = GetTimeGPS(line);
-                    lasttime = gpsstarttime;
+                    var time = GetTimeGPS(line);
 
-                    int indextimems = FindMessageOffset("GPS", "T");
-
-                    if (indextimems != -1)
+                    if (time != DateTime.MinValue)
                     {
-                        try
+                        gpsstarttime = time;
+
+                        lasttime = gpsstarttime;
+
+                        int indextimems = FindMessageOffset(items[0], "T");
+
+                        if (indextimems != -1)
                         {
-                            msoffset = int.Parse(items[indextimems]);
+                            try
+                            {
+                                msoffset = int.Parse(items[indextimems]);
+                            }
+                            catch
+                            {
+                                gpsstarttime = DateTime.MinValue;
+                            }
                         }
-                        catch { }
+
+                        int indextimeus = FindMessageOffset(items[0], "TimeUS");
+
+                        if (indextimeus != -1)
+                        {
+                            try
+                            {
+                                msoffset = int.Parse(items[indextimeus]) / 1000;
+                            }
+                            catch
+                            {
+                                gpsstarttime = DateTime.MinValue;
+                            }
+                        }
                     }
                 }
             }
@@ -314,31 +357,44 @@ namespace MissionPlanner.Log
                 {
                     item.msgtype = items[0];
                     item.items = items;
-
-                    if (line.StartsWith("GPS"))
-                    {
-                        item.time = GetTimeGPS(line);
-                    }
-                    else
-                    {
+                    bool timeus = false;
+                    
                         if (logformat.ContainsKey(item.msgtype))
                         {
                             int indextimems = FindMessageOffset(item.msgtype, "TimeMS");
 
+                            if (item.msgtype.StartsWith("GPS"))
+                            {
+                                indextimems = FindMessageOffset(item.msgtype, "T");
+                            }
+
+                            if (indextimems == -1)
+                            {
+                                indextimems = FindMessageOffset(item.msgtype, "TimeUS");
+                                timeus = true;
+                            } 
+
                             if (indextimems != -1)
                             {
-                                item.timems = int.Parse(items[indextimems]);
+                                var ntime = long.Parse(items[indextimems]);
 
-                                item.time = gpsstarttime.AddMilliseconds(item.timems - msoffset);
+                                if (timeus)
+                                    ntime /= 1000;
 
-                                lasttime = item.time;
+                                item.timems = (int)ntime;
+
+                                if (gpsstarttime != DateTime.MinValue)
+                                {
+                                    item.time = gpsstarttime.AddMilliseconds(item.timems - msoffset);
+                                    lasttime = item.time;
+                                }
                             }
                             else
                             {
                                 item.time = lasttime;
                             }
                         }
-                    }
+                    
                 }
             }
             catch { }
@@ -346,7 +402,7 @@ namespace MissionPlanner.Log
             return item;
         }
 
-        public static void FMTLine(string strLine)
+        public void FMTLine(string strLine)
         {
             try
             {
@@ -370,7 +426,7 @@ namespace MissionPlanner.Log
 
         //FMT, 130, 45, GPS, BIHBcLLeeEefI, Status,TimeMS,Week,NSats,HDop,Lat,Lng,RelAlt,Alt,Spd,GCrs,VZ,T
         //GPS, 3, 130040903, 1769, 10, 0.00, -35.3547178, 149.1696673, 885.52, 870.45, 24.56, 321.44, 2.450000, 127615
-        public static DateTime GetTimeGPS(string gpsline)
+        public DateTime GetTimeGPS(string gpsline)
         {
             if (gpsline.StartsWith("GPS") && logformat.Count > 0)
             {
@@ -384,15 +440,24 @@ namespace MissionPlanner.Log
 
                 if (indexstatus != -1)
                 {
-                    if (items[indexstatus].Trim() != "3" && items[indexstatus].Trim() != "2")
+                    // 3d lock or better
+                    if (items[indexstatus].Trim() == "0" || items[indexstatus].Trim() == "1" || items[indexstatus].Trim() == "2")
                         return DateTime.MinValue;
                 }
 
                 // get time since start of week
                 int indextimems = FindMessageOffset("GPS", "TimeMS");
 
+                if (indextimems == -1)
+                {
+                    indextimems = FindMessageOffset("GPS", "GMS");
+                }
+
                 // get week number
                 int indexweek = FindMessageOffset("GPS", "Week");
+
+                if (indexweek == -1)
+                    indexweek = FindMessageOffset("GPS", "GWk");
 
                 if (indextimems == -1 || indexweek == -1)
                     return DateTime.MinValue;
@@ -405,7 +470,7 @@ namespace MissionPlanner.Log
 
         public static DateTime gpsTimeToTime(int week, double sec)
         {
-            int leap = 16;
+            int leap = 17;
 
             // not correct for leap seconds                   day   days  weeks  seconds
             var basetime = new DateTime(1980, 1, 6, 0, 0, 0, DateTimeKind.Utc);
@@ -415,7 +480,7 @@ namespace MissionPlanner.Log
             return basetime.ToLocalTime();
         }
 
-        public static int FindMessageOffset(string linetype,string find)
+        public int FindMessageOffset(string linetype,string find)
         {
             if (logformat.ContainsKey(linetype))
                 return Log.DFLog.FindInArray(logformat[linetype].FieldNames, find);

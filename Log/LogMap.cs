@@ -30,10 +30,8 @@ namespace MissionPlanner.Log
                 {
                     if (logfile.ToLower().EndsWith(".tlog"))
                     {
-                        MAVLinkInterface mine = new MAVLinkInterface();
-
-
-                        using (mine.logplaybackfile = new BinaryReader(File.Open(logfile, FileMode.Open, FileAccess.Read, FileShare.Read)))
+                        using (MAVLinkInterface mine = new MAVLinkInterface())
+                        using (mine.logplaybackfile = new BinaryReader(File.Open(logfile, FileMode.Open, FileAccess.Read, FileShare.ReadWrite)))
                         {
                             mine.logreadmode = true;
 
@@ -75,7 +73,10 @@ namespace MissionPlanner.Log
                     {
                         bool bin = logfile.ToLower().EndsWith(".bin");
 
-                        using (var st = File.OpenRead(logfile))
+                        BinaryLog binlog = new BinaryLog();
+                        DFLog dflog = new DFLog();
+
+                        using (var st = File.Open(logfile, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
                         {
                             using (StreamReader sr = new StreamReader(st))
                             {
@@ -85,7 +86,7 @@ namespace MissionPlanner.Log
 
                                     if (bin)
                                     {
-                                        line = BinaryLog.ReadMessage(sr.BaseStream);
+                                        line = binlog.ReadMessage(sr.BaseStream);
                                     }
                                     else
                                     {
@@ -94,14 +95,14 @@ namespace MissionPlanner.Log
 
                                     if (line.StartsWith("FMT"))
                                     {
-                                        DFLog.FMTLine(line);
+                                        dflog.FMTLine(line);
                                     }
                                     else if (line.StartsWith("GPS"))
                                     {
-                                        var item = DFLog.GetDFItemFromLine(line, 0);
+                                        var item = dflog.GetDFItemFromLine(line, 0);
 
-                                        var lat = double.Parse(item.items[DFLog.FindMessageOffset(item.msgtype, "Lat")]);
-                                        var lon = double.Parse(item.items[DFLog.FindMessageOffset(item.msgtype, "Lng")]);
+                                        var lat = double.Parse(item.items[dflog.FindMessageOffset(item.msgtype, "Lat")]);
+                                        var lon = double.Parse(item.items[dflog.FindMessageOffset(item.msgtype, "Lng")]);
 
                                         if (lat == 0 || lon == 0)
                                             continue;
@@ -230,16 +231,18 @@ namespace MissionPlanner.Log
                         foreach (var tp in type.Overlays)
                         {
                             Exception ex;
-                            GMapImage tile = GMaps.Instance.GetImageFrom(tp, p, zoom, out ex) as GMapImage;
-
-                            if (tile != null)
+                            using (GMapImage tile = GMaps.Instance.GetImageFrom(tp, p, zoom, out ex) as GMapImage)
                             {
-                                using (tile)
+
+                                if (tile != null)
                                 {
-                                    long x = p.X * prj.TileSize.Width - topLeftPx.X + padding;
-                                    long y = p.Y * prj.TileSize.Width - topLeftPx.Y + padding;
+                                    using (tile)
                                     {
-                                        gfx.DrawImage(tile.Img, x, y, prj.TileSize.Width, prj.TileSize.Height);
+                                        long x = p.X * prj.TileSize.Width - topLeftPx.X + padding;
+                                        long y = p.Y * prj.TileSize.Width - topLeftPx.Y + padding;
+                                        {
+                                            gfx.DrawImage(tile.Img, x, y, prj.TileSize.Width, prj.TileSize.Height);
+                                        }
                                     }
                                 }
                             }

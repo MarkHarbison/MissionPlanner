@@ -107,97 +107,9 @@ namespace MissionPlanner
                 System.Configuration.ConfigurationManager.AppSettings["UpdateLocationVersion"] = "";
             }
 
-            CleanupFiles();  
+            CleanupFiles();
 
-            //fontgen.dowork();
-
-            //adsb.server = "64.93.124.152";
-            //adsb.serverport = 31001;
-            //adsb.serverport = 30003;
-
-            //Utilities.Airports.ReadUNLOCODE(@"C:\Users\hog\Desktop\2013-2 UNLOCODE CodeListPart1.csv");
-            //Utilities.Airports.ReadUNLOCODE(@"C:\Users\hog\Desktop\2013-2 UNLOCODE CodeListPart2.csv");
-            //Utilities.Airports.ReadUNLOCODE(@"C:\Users\hog\Desktop\2013-2 UNLOCODE CodeListPart3.csv");
-            //Utilities.Airports.ReadPartow(@"C:\Users\hog\Desktop\GlobalAirportDatabase.txt");
-
-
-            /*
-            Arduino.ArduinoSTKv2 comport = new Arduino.ArduinoSTKv2();
-
-            comport.PortName = "com8";
-
-            comport.BaudRate = 115200;
-
-            comport.Open();
-
-            Arduino.Chip.Populate();
-
-            if (comport.connectAP())
-            {
-                Arduino.Chip chip = comport.getChipType();
-                Console.WriteLine(chip);
-            }
-            Console.ReadLine();
-
-            return;
-            */
-            /*
-            Comms.SerialPort sp = new Comms.SerialPort();
-
-            sp.PortName = "com8";
-            sp.BaudRate = 115200;
-
-            CurrentState cs = new CurrentState();
-
-            MAVLink mav = new MAVLink();
-
-            mav.BaseStream = sp;
-
-            mav.Open();
-
-            HIL.XPlane xp = new HIL.XPlane();
-
-            xp.SetupSockets(49005, 49000, "127.0.0.1");
-
-            HIL.Hil.sitl_fdm data = new HIL.Hil.sitl_fdm();
-
-            while (true)
-            {
-                while (mav.BaseStream.BytesToRead > 0)
-                    mav.readPacket();
-
-                // update all stats
-                cs.UpdateCurrentSettings(null);
-
-                xp.GetFromSim(ref data);
-                xp.GetFromAP(); // no function
-
-                xp.SendToAP(data);
-                xp.SendToSim();
-
-                MAVLink.mavlink_rc_channels_override_t rc = new MAVLink.mavlink_rc_channels_override_t();
-
-                rc.chan3_raw = 1500;
-
-                mav.sendPacket(rc);
-                
-            }       */
-        
-           // return;
-          //  OSDVideo vid = new OSDVideo();
-
-         //   vid.ShowDialog();
-
-         //   return;
-             
-          //  if (Debugger.IsAttached)
-          //      ThemeManager.doxamlgen();
-
-            if (File.Exists("simple.txt"))
-            {
-                Application.Run(new GCSViews.Simple());
-                return;
-            }
+            Utilities.NGEN.doNGEN();
 
             Splash = new MissionPlanner.Splash();
             string strVersion = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version.ToString();
@@ -209,7 +121,6 @@ namespace MissionPlanner
             try
             {
                 //System.Diagnostics.Process.GetCurrentProcess().PriorityClass = System.Diagnostics.ProcessPriorityClass.RealTime;
-
                 Thread.CurrentThread.Name = "Base Thread";
                 Application.Run(new MainV2());
             }
@@ -221,6 +132,14 @@ namespace MissionPlanner
                 Console.WriteLine("\nPress any key to exit!");
                 Console.ReadLine();
             }
+
+            try
+            {
+                // kill sim background process if its still running
+                if (Controls.SITL.simulator != null)
+                    Controls.SITL.simulator.Kill();
+            }
+            catch { }
         }
 
         static void CleanupFiles()
@@ -295,7 +214,7 @@ namespace MissionPlanner
                 CustomMessageBox.Show("Serial connection has been lost");
                 return;
             }
-            if (ex.GetType() == typeof(MissingMethodException))
+            if (ex.GetType() == typeof(MissingMethodException) || ex.GetType() == typeof(TypeLoadException))
             {
                 CustomMessageBox.Show("Please Update - Some older library dlls are causing problems\n" + ex.Message);
                 return;
@@ -327,7 +246,14 @@ namespace MissionPlanner
                     string data = "";
                         foreach (System.Collections.DictionaryEntry de in ex.Data)
                             data += String.Format("-> {0}: {1}", de.Key, de.Value);
-              
+
+                    string message = "";
+
+                    try
+                    {
+                        Controls.InputBox.Show("Message", "Please enter a message about this error if you can.", ref message);
+                    }
+                    catch { }
 
                     // Create a request using a URL that can receive a post. 
                     WebRequest request = WebRequest.Create("http://vps.oborne.me/mail.php");
@@ -340,7 +266,8 @@ namespace MissionPlanner
                         + "\nException " + ex.ToString().Replace('&', ' ').Replace('=', ' ') 
                         + "\nStack: " + ex.StackTrace.ToString().Replace('&', ' ').Replace('=', ' ') 
                         + "\nTargetSite " + ex.TargetSite + " " + ex.TargetSite.DeclaringType
-                        + "\ndata " + data;
+                        + "\ndata " + data
+                        + "\nmessage " + message.Replace('&', ' ').Replace('=', ' ');
                     byte[] byteArray = Encoding.ASCII.GetBytes(postData);
                     // Set the ContentType property of the WebRequest.
                     request.ContentType = "application/x-www-form-urlencoded";

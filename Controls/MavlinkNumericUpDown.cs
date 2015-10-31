@@ -19,8 +19,6 @@ namespace MissionPlanner.Controls
         [System.ComponentModel.Browsable(true)]
         public string ParamName { get; set; }
 
-        [System.ComponentModel.Browsable(true)]
-        public Hashtable param { get; set; }
 
         Control _control;
         float _scale = 1;
@@ -38,12 +36,12 @@ namespace MissionPlanner.Controls
             this.Enabled = false;
         }
 
-        public void setup(float Min, float Max, float Scale, float Increment, string paramname, Hashtable paramlist, Control enabledisable = null)
+        public void setup(float Min, float Max, float Scale, float Increment, string paramname, MAVLink.MAVLinkParamList paramlist, Control enabledisable = null)
         {
             setup(Min, Max, Scale, Increment, new string[] { paramname }, paramlist, enabledisable);
         }
 
-        public void setup(float Min, float Max, float Scale, float Increment, string[] paramname, Hashtable paramlist, Control enabledisable = null)
+        public void setup(float Min, float Max, float Scale, float Increment, string[] paramname, MAVLink.MAVLinkParamList paramlist, Control enabledisable = null)
         {
             this.ValueChanged -= MavlinkNumericUpDown_ValueChanged;
 
@@ -76,7 +74,6 @@ namespace MissionPlanner.Controls
             this.Increment = (decimal)(Increment);
             this.DecimalPlaces = BitConverter.GetBytes(decimal.GetBits((decimal)Increment)[3])[2];
   
-            this.param = paramlist;
             this._control = enabledisable;
 
             if (paramlist.ContainsKey(ParamName))
@@ -121,6 +118,16 @@ namespace MissionPlanner.Controls
 
         void MavlinkNumericUpDown_ValueChanged(object sender, EventArgs e)
         {
+            string value = base.Text;
+            if (decimal.Parse(value) > base.Maximum)
+            {
+                if (CustomMessageBox.Show(ParamName + " Value out of range\nDo you want to accept the new value?", "Out of range", MessageBoxButtons.YesNo) == DialogResult.Yes)
+                {
+                    base.Maximum = decimal.Parse(value);
+                    base.Value = decimal.Parse(value);
+                }
+            }
+
             if (ValueUpdated!= null)
             {
                 this.UpdateEditText();

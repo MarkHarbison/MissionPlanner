@@ -25,8 +25,10 @@ namespace MissionPlanner
 
         static double error = 99;
         static double error2 = 99;
+        static double error3 = 99;
         static double[] ans;
         static double[] ans2;
+        static double[] ans3;
 
         static string GetColour(int pitch, int yaw)
         {
@@ -96,36 +98,38 @@ namespace MissionPlanner
         /// </summary>
         public static void ProcessLog(int throttleThreshold = 0)
         {
-            OpenFileDialog openFileDialog1 = new OpenFileDialog();
-            openFileDialog1.Filter = "Log Files|*.tlog;*.log";
-            openFileDialog1.FilterIndex = 2;
-            openFileDialog1.RestoreDirectory = true;
-            openFileDialog1.Multiselect = true;
-            try
+            using (OpenFileDialog openFileDialog1 = new OpenFileDialog())
             {
-                openFileDialog1.InitialDirectory = MainV2.LogDir + Path.DirectorySeparatorChar;
-            }
-            catch { } // incase dir doesnt exist
-
-            if (openFileDialog1.ShowDialog() == DialogResult.OK)
-            {
+                openFileDialog1.Filter = "Log Files|*.tlog;*.log";
+                openFileDialog1.FilterIndex = 2;
+                openFileDialog1.RestoreDirectory = true;
+                openFileDialog1.Multiselect = true;
                 try
                 {
-                    double[] ans;
-
-                    if (openFileDialog1.FileName.ToLower().EndsWith("tlog"))
-                    {
-                        ans = getOffsets(openFileDialog1.FileName, throttleThreshold);
-                    }
-                    else
-                    {
-                        ans = getOffsetsLog(openFileDialog1.FileName);
-                    }
-
-                    if (ans.Length != 1)
-                        SaveOffsets(ans);
+                    openFileDialog1.InitialDirectory = MainV2.LogDir + Path.DirectorySeparatorChar;
                 }
-                catch (Exception ex) { log.Debug(ex.ToString()); }
+                catch { } // incase dir doesnt exist
+
+                if (openFileDialog1.ShowDialog() == DialogResult.OK)
+                {
+                    try
+                    {
+                        double[] ans;
+
+                        if (openFileDialog1.FileName.ToLower().EndsWith("tlog"))
+                        {
+                            ans = getOffsets(openFileDialog1.FileName, throttleThreshold);
+                        }
+                        else
+                        {
+                            ans = getOffsetsLog(openFileDialog1.FileName);
+                        }
+
+                        if (ans.Length != 1)
+                            SaveOffsets(ans);
+                    }
+                    catch (Exception ex) { log.Debug(ex.ToString()); }
+                }
             }
         }
 
@@ -137,8 +141,11 @@ namespace MissionPlanner
             datacompass1.Clear();
             datacompass2.Clear();
             filtercompass2.Clear();
+            filtercompass3.Clear();
+            datacompass3.Clear();
             error = 99;
             error2 = 99;
+            error3 = 99;
 
             if (dointro)
                 CustomMessageBox.Show(Strings.MagCalibMsg);
@@ -158,18 +165,24 @@ namespace MissionPlanner
 
             if (ans2 != null)
                 MagCalib.SaveOffsets2(ans2);
+
+            if (ans3 != null)
+                MagCalib.SaveOffsets3(ans3);
         }
 
         // filter data points to only x number per quadrant
         static int div = 20;
         static Hashtable filtercompass1 = new Hashtable();
         static Hashtable filtercompass2 = new Hashtable();
+        static Hashtable filtercompass3 = new Hashtable();
 
         // list of x,y,z 's
         static List<Tuple<float, float, float>> datacompass1 = new List<Tuple<float, float, float>>();
 
         // list no 2
         static List<Tuple<float, float, float>> datacompass2 = new List<Tuple<float, float, float>>();
+
+        static List<Tuple<float, float, float>> datacompass3 = new List<Tuple<float, float, float>>();
 
         static bool ReceviedPacket(byte[] rawpacket)
         {
@@ -210,10 +223,49 @@ namespace MissionPlanner
 
                 return true;
             }
+            else if (rawpacket[5] == (byte)MAVLink.MAVLINK_MSG_ID.SCALED_IMU3)
+            {
+                MAVLink.mavlink_scaled_imu3_t packet = rawpacket.ByteArrayToStructure<MAVLink.mavlink_scaled_imu3_t>();
+
+                // filter dataset
+                string item = (int)(packet.xmag / div) + "," +
+                    (int)(packet.ymag / div) + "," +
+                    (int)(packet.zmag / div);
+
+                if (filtercompass3.ContainsKey(item))
+                {
+                    filtercompass3[item] = (int)filtercompass3[item] + 1;
+
+                    if ((int)filtercompass3[item] > 3)
+                        return false;
+                }
+                else
+                {
+                    filtercompass3[item] = 1;
+                }
+
+                // values - offsets are 0
+                float rawmx = packet.xmag;
+                float rawmy = packet.ymag;
+                float rawmz = packet.zmag;
+
+                // add data
+                lock (datacompass3)
+                {
+                    if (rawmx == 0 || rawmy == 0 || rawmz == 0)
+                        return true;
+
+                    datacompass3.Add(new Tuple<float, float, float>(rawmx, rawmy, rawmz));
+                }
+
+                return true;
+            }
             else if (rawpacket[5] == (byte)MAVLink.MAVLINK_MSG_ID.RAW_IMU)
             {
                 MAVLink.mavlink_raw_imu_t packet = rawpacket.ByteArrayToStructure<MAVLink.mavlink_raw_imu_t>();
 
+                if (packet.xmag == 0 && packet.ymag == 0)
+                    return false;
 
                 // filter dataset
                 string item = (int)(packet.xmag / div) + "," +
@@ -255,19 +307,26 @@ namespace MissionPlanner
             MainV2.comPort.setParam("COMPASS_LEARN", 0);
 
             bool havecompass2 = false;
+            bool havecompass3 = false;
 
             //compass2 get mag2 offsets
             if (MainV2.comPort.MAV.param.ContainsKey("COMPASS_OFS2_X"))
             {
-                //com2ofsx = MainV2.comPort.GetParam("COMPASS_OFS2_X");
-                //com2ofsy = MainV2.comPort.GetParam("COMPASS_OFS2_Y");
-                //com2ofsz = MainV2.comPort.GetParam("COMPASS_OFS2_Z");
-
                 MainV2.comPort.setParam("COMPASS_OFS2_X", 0, true);
                 MainV2.comPort.setParam("COMPASS_OFS2_Y", 0, true);
                 MainV2.comPort.setParam("COMPASS_OFS2_Z", 0, true);
 
                 havecompass2 = true;
+            }
+
+            //compass3
+            if (MainV2.comPort.MAV.param.ContainsKey("COMPASS_OFS3_X"))
+            {
+                MainV2.comPort.setParam("COMPASS_OFS3_X", 0, true);
+                MainV2.comPort.setParam("COMPASS_OFS3_Y", 0, true);
+                MainV2.comPort.setParam("COMPASS_OFS3_Z", 0, true);
+
+                havecompass3 = true;
             }
 
             int hittarget = 14;// int.Parse(File.ReadAllText("magtarget.txt"));
@@ -298,16 +357,20 @@ namespace MissionPlanner
 
             var sub2 = MainV2.comPort.SubscribeToPacketType(MAVLink.MAVLINK_MSG_ID.SCALED_IMU2, ReceviedPacket);
 
+            var sub3 = MainV2.comPort.SubscribeToPacketType(MAVLink.MAVLINK_MSG_ID.SCALED_IMU3, ReceviedPacket);
+
             string extramsg = "";
 
             // clear any old data
             ((ProgressReporterSphere)sender).sphere1.Clear();
             ((ProgressReporterSphere)sender).sphere2.Clear();
+            ((ProgressReporterSphere)sender).sphere3.Clear();
 
             // keep track of data count and last lsq run
             int lastcount = 0;
             DateTime lastlsq = DateTime.MinValue;
             DateTime lastlsq2 = DateTime.MinValue;
+            DateTime lastlsq3 = DateTime.MinValue;
 
             HIL.Vector3 centre = new HIL.Vector3();
 
@@ -316,7 +379,15 @@ namespace MissionPlanner
                 // slow down execution
                 System.Threading.Thread.Sleep(10);
 
-                ((ProgressReporterDialogue)sender).UpdateProgressAndStatus(-1, "Got " + datacompass1.Count + " Samples\ncompass 1 error:" +error  + "\ncompass 2 error:" +error2 +"\n"+ extramsg);
+                string str = "Got + " + datacompass1.Count + " samples\n" +
+                    "Compass 1 error: " + error;
+                if (MainV2.comPort.MAV.param.ContainsKey("COMPASS_OFS2_X"))
+                    str += "\nCompass 2 error: " + error2;
+                if (MainV2.comPort.MAV.param.ContainsKey("COMPASS_OFS3_X"))
+                    str += "\nCompass 3 error: " + error3;
+                str += "\n" + extramsg;
+
+                ((ProgressReporterDialogue)sender).UpdateProgressAndStatus(-1, str);
 
                 if (e.CancelRequested)
                 {
@@ -381,6 +452,24 @@ namespace MissionPlanner
                     }
                 }
 
+                // run lsq every second when more than 100 datapoints
+                if (datacompass3.Count > 100 && lastlsq3.Second != DateTime.Now.Second)
+                {
+                    lastlsq3 = DateTime.Now;
+                    lock (datacompass3)
+                    {
+                        var lsq = MagCalib.LeastSq(datacompass3, false);
+                        // simple validation
+                        if (Math.Abs(lsq[0]) < 999)
+                        {
+                            HIL.Vector3 centre3 = new HIL.Vector3(lsq[0], lsq[1], lsq[2]);
+                            log.Info("new centre2 " + centre3.ToString());
+
+                            ((ProgressReporterSphere)sender).sphere3.CenterPoint = new OpenTK.Vector3((float)centre3.x, (float)centre3.y, (float)centre3.z);
+                        }
+                    }
+                }
+
                 //Console.WriteLine("1a " + DateTime.Now.Millisecond);
 
                 // dont use dup data
@@ -401,6 +490,16 @@ namespace MissionPlanner
 
                     ((ProgressReporterSphere)sender).sphere2.AddPoint(new OpenTK.Vector3(raw2mx, raw2my, raw2mz));
                     ((ProgressReporterSphere)sender).sphere2.AimClear();
+                }
+
+                if (datacompass3.Count > 30)
+                {
+                    float raw3mx = datacompass3[datacompass3.Count - 1].Item1;
+                    float raw3my = datacompass3[datacompass3.Count - 1].Item2;
+                    float raw3mz = datacompass3[datacompass3.Count - 1].Item3;
+
+                    ((ProgressReporterSphere)sender).sphere3.AddPoint(new OpenTK.Vector3(raw3mx, raw3my, raw3mz));
+                    ((ProgressReporterSphere)sender).sphere3.AimClear();
                 }
 
                 //Console.WriteLine("2 " + DateTime.Now.Millisecond);
@@ -476,7 +575,7 @@ namespace MissionPlanner
 
             MainV2.comPort.UnSubscribeToPacketType(sub);
             MainV2.comPort.UnSubscribeToPacketType(sub2);
-
+            MainV2.comPort.UnSubscribeToPacketType(sub3);
 
             // restore old sensor rate
             MainV2.comPort.MAV.cs.ratesensors = backupratesens;
@@ -516,6 +615,7 @@ namespace MissionPlanner
                     e.CancelRequested = true;
                     ans = null;
                     ans2 = null;
+                    ans3 = null;
                     return;
                 }
             }
@@ -525,6 +625,10 @@ namespace MissionPlanner
             if (havecompass2 && datacompass2.Count > 0)
             {
                 RemoveOutliers(ref datacompass2);
+            }
+            if (havecompass3 && datacompass3.Count > 0)
+            {
+                RemoveOutliers(ref datacompass3);
             }
 
             if (datacompass1.Count < 10)
@@ -549,6 +653,12 @@ namespace MissionPlanner
             {
                 log.Info("Compass 2");
                 ans2 = MagCalib.LeastSq(datacompass2, ellipsoid);
+            }
+
+            if (havecompass3 && datacompass3.Count > 0)
+            {
+                log.Info("Compass 3");
+                ans3 = MagCalib.LeastSq(datacompass3, ellipsoid);
             }
         }
 
@@ -582,19 +692,21 @@ namespace MissionPlanner
 
             List<Tuple<float, float, float>> data2 = new List<Tuple<float, float, float>>();
 
-            var logfile = Log.DFLog.ReadLog(fn);
+            Log.DFLog dflog = new Log.DFLog();
+
+            var logfile = dflog.ReadLog(fn);
 
             foreach (var line in logfile)
             {
                 if (line.msgtype == "MAG" || line.msgtype == "MAG2")
                 {
-                    int indexmagx = Log.DFLog.FindMessageOffset(line.msgtype, "MagX");
-                    int indexmagy = Log.DFLog.FindMessageOffset(line.msgtype, "MagY");
-                    int indexmagz = Log.DFLog.FindMessageOffset(line.msgtype, "MagZ");
+                    int indexmagx = dflog.FindMessageOffset(line.msgtype, "MagX");
+                    int indexmagy = dflog.FindMessageOffset(line.msgtype, "MagY");
+                    int indexmagz = dflog.FindMessageOffset(line.msgtype, "MagZ");
 
-                    int indexoffsetx = Log.DFLog.FindMessageOffset(line.msgtype, "OfsX");
-                    int indexoffsety = Log.DFLog.FindMessageOffset(line.msgtype, "OfsY");
-                    int indexoffsetz = Log.DFLog.FindMessageOffset(line.msgtype, "OfsZ");
+                    int indexoffsetx = dflog.FindMessageOffset(line.msgtype, "OfsX");
+                    int indexoffsety = dflog.FindMessageOffset(line.msgtype, "OfsY");
+                    int indexoffsetz = dflog.FindMessageOffset(line.msgtype, "OfsZ");
 
                     if (indexmagx != -1 && indexoffsetx != -1)
                     {
@@ -685,101 +797,103 @@ namespace MissionPlanner
 
             log.Info("Start log: " + DateTime.Now);
 
-            MAVLinkInterface mine = new MAVLinkInterface();
-            try
+            using (MAVLinkInterface mine = new MAVLinkInterface())
             {
-                mine.logplaybackfile = new BinaryReader(File.Open(logfile, FileMode.Open, FileAccess.Read, FileShare.Read));
+                try
+                {
+                    mine.logplaybackfile = new BinaryReader(File.Open(logfile, FileMode.Open, FileAccess.Read, FileShare.Read));
+                }
+                catch (Exception ex) { log.Debug(ex.ToString()); CustomMessageBox.Show("Log Can not be opened. Are you still connected?"); return new double[] { 0 }; }
+
+                mine.logreadmode = true;
+
+                mine.MAV.packets.Initialize(); // clear
+
+                // gather data
+                while (mine.logplaybackfile.BaseStream.Position < mine.logplaybackfile.BaseStream.Length)
+                {
+                    byte[] packetraw = mine.readPacket();
+
+                    var packet = mine.DebugPacket(packetraw, false);
+
+                    // this is for packets we dont know about
+                    if (packet == null)
+                        continue;
+
+                    if (packet.GetType() == typeof(MAVLink.mavlink_vfr_hud_t))
+                    {
+                        if (((MAVLink.mavlink_vfr_hud_t)packet).throttle >= throttleThreshold)
+                        {
+                            useData = true;
+                        }
+                        else
+                        {
+                            useData = false;
+                        }
+
+                    }
+
+                    if (packet.GetType() == typeof(MAVLink.mavlink_sensor_offsets_t))
+                    {
+                        offset = new Tuple<float, float, float>(
+                            ((MAVLink.mavlink_sensor_offsets_t)packet).mag_ofs_x,
+                            ((MAVLink.mavlink_sensor_offsets_t)packet).mag_ofs_y,
+                            ((MAVLink.mavlink_sensor_offsets_t)packet).mag_ofs_z);
+                    }
+                    else if (packet.GetType() == typeof(MAVLink.mavlink_raw_imu_t) && useData)
+                    {
+                        int div = 20;
+
+                        // fox dxf
+                        vertex = new Polyline3dVertex(new Vector3f(
+                            ((MAVLink.mavlink_raw_imu_t)packet).xmag - offset.Item1,
+                            ((MAVLink.mavlink_raw_imu_t)packet).ymag - offset.Item2,
+                            ((MAVLink.mavlink_raw_imu_t)packet).zmag - offset.Item3)
+                            );
+                        vertexes.Add(vertex);
+
+
+                        // for old method
+                        setMinorMax(((MAVLink.mavlink_raw_imu_t)packet).xmag - offset.Item1, ref minx, ref maxx);
+                        setMinorMax(((MAVLink.mavlink_raw_imu_t)packet).ymag - offset.Item2, ref miny, ref maxy);
+                        setMinorMax(((MAVLink.mavlink_raw_imu_t)packet).zmag - offset.Item3, ref minz, ref maxz);
+
+                        // for new lease sq
+                        string item = (int)(((MAVLink.mavlink_raw_imu_t)packet).xmag / div) + "," +
+                            (int)(((MAVLink.mavlink_raw_imu_t)packet).ymag / div) + "," +
+                            (int)(((MAVLink.mavlink_raw_imu_t)packet).zmag / div);
+
+                        if (filter.ContainsKey(item))
+                        {
+                            filter[item] = (int)filter[item] + 1;
+
+                            if ((int)filter[item] > 3)
+                                continue;
+                        }
+                        else
+                        {
+                            filter[item] = 1;
+                        }
+
+
+                        data.Add(new Tuple<float, float, float>(
+                            ((MAVLink.mavlink_raw_imu_t)packet).xmag - offset.Item1,
+                            ((MAVLink.mavlink_raw_imu_t)packet).ymag - offset.Item2,
+                            ((MAVLink.mavlink_raw_imu_t)packet).zmag - offset.Item3));
+
+                    }
+
+                }
+
+                log.Info("Log Processed " + DateTime.Now);
+
+                Console.WriteLine("Extracted " + data.Count + " data points");
+                Console.WriteLine("Current offset: " + offset);
+
+                mine.logreadmode = false;
+                mine.logplaybackfile.Close();
+                mine.logplaybackfile = null;
             }
-            catch (Exception ex) { log.Debug(ex.ToString()); CustomMessageBox.Show("Log Can not be opened. Are you still connected?"); return new double[] { 0 }; }
-
-            mine.logreadmode = true;
-
-            mine.MAV.packets.Initialize(); // clear
-
-            // gather data
-            while (mine.logplaybackfile.BaseStream.Position < mine.logplaybackfile.BaseStream.Length)
-            {
-                byte[] packetraw = mine.readPacket();
-
-                var packet = mine.DebugPacket(packetraw, false);
-
-                // this is for packets we dont know about
-                if (packet == null)
-                    continue;
-
-                if (packet.GetType() == typeof(MAVLink.mavlink_vfr_hud_t))
-                {
-                    if (((MAVLink.mavlink_vfr_hud_t)packet).throttle >= throttleThreshold)
-                    {
-                        useData = true;
-                    }
-                    else
-                    {
-                        useData = false;
-                    }
-
-                }
-
-                if (packet.GetType() == typeof(MAVLink.mavlink_sensor_offsets_t))
-                {
-                    offset = new Tuple<float, float, float>(
-                        ((MAVLink.mavlink_sensor_offsets_t)packet).mag_ofs_x,
-                        ((MAVLink.mavlink_sensor_offsets_t)packet).mag_ofs_y,
-                        ((MAVLink.mavlink_sensor_offsets_t)packet).mag_ofs_z);
-                }
-                else if (packet.GetType() == typeof(MAVLink.mavlink_raw_imu_t) && useData)
-                {
-                    int div = 20;
-
-                    // fox dxf
-                    vertex = new Polyline3dVertex(new Vector3f(
-                        ((MAVLink.mavlink_raw_imu_t)packet).xmag - offset.Item1,
-                        ((MAVLink.mavlink_raw_imu_t)packet).ymag - offset.Item2,
-                        ((MAVLink.mavlink_raw_imu_t)packet).zmag - offset.Item3)
-                        );
-                    vertexes.Add(vertex);
-
-
-                    // for old method
-                    setMinorMax(((MAVLink.mavlink_raw_imu_t)packet).xmag - offset.Item1, ref minx, ref maxx);
-                    setMinorMax(((MAVLink.mavlink_raw_imu_t)packet).ymag - offset.Item2, ref miny, ref maxy);
-                    setMinorMax(((MAVLink.mavlink_raw_imu_t)packet).zmag - offset.Item3, ref minz, ref maxz);
-
-                    // for new lease sq
-                    string item = (int)(((MAVLink.mavlink_raw_imu_t)packet).xmag / div) + "," +
-                        (int)(((MAVLink.mavlink_raw_imu_t)packet).ymag / div) + "," +
-                        (int)(((MAVLink.mavlink_raw_imu_t)packet).zmag / div);
-
-                    if (filter.ContainsKey(item))
-                    {
-                        filter[item] = (int)filter[item] + 1;
-
-                        if ((int)filter[item] > 3)
-                            continue;
-                    }
-                    else
-                    {
-                        filter[item] = 1;
-                    }
-
-
-                    data.Add(new Tuple<float, float, float>(
-                        ((MAVLink.mavlink_raw_imu_t)packet).xmag - offset.Item1,
-                        ((MAVLink.mavlink_raw_imu_t)packet).ymag - offset.Item2,
-                        ((MAVLink.mavlink_raw_imu_t)packet).zmag - offset.Item3));
-
-                }
-
-            }
-
-            log.Info("Log Processed " + DateTime.Now);
-
-            Console.WriteLine("Extracted " + data.Count + " data points");
-            Console.WriteLine("Current offset: " + offset);
-
-            mine.logreadmode = false;
-            mine.logplaybackfile.Close();
-            mine.logplaybackfile = null;
 
             if (data.Count < 10)
             {
@@ -958,6 +1072,13 @@ namespace MissionPlanner
                         MainV2.comPort.setParam("COMPASS_OFS_Y", (float)ofs[1]);
                         MainV2.comPort.setParam("COMPASS_OFS_Z", (float)ofs[2]);
                     }
+                    else
+                    {
+                        // Need to reload these params into the param list if SetSensorOffsets() was used
+                        MainV2.comPort.GetParam("COMPASS_OFS_X");
+                        MainV2.comPort.GetParam("COMPASS_OFS_Y");
+                        MainV2.comPort.GetParam("COMPASS_OFS_Z");
+                    }
 
                     if (ofs.Length > 3)
                     {
@@ -966,15 +1087,15 @@ namespace MissionPlanner
                 }
                 catch
                 {
-                    CustomMessageBox.Show("Set Compass offset failed");
+                    CustomMessageBox.Show("Setting new offsets for compass #1 failed");
                     return;
                 }
 
-                CustomMessageBox.Show("New offsets are " + ofs[0].ToString("0") + " " + ofs[1].ToString("0") + " " + ofs[2].ToString("0") + "\nThese have been saved for you.", "New Mag Offsets");
+                CustomMessageBox.Show("New offsets for compass #1 are " + ofs[0].ToString("0") + " " + ofs[1].ToString("0") + " " + ofs[2].ToString("0") + "\nThese have been saved for you.", "New Mag Offsets");
             }
             else
             {
-                CustomMessageBox.Show("New offsets are " + ofs[0].ToString("0") + " " + ofs[1].ToString("0") + " " + ofs[2].ToString("0") + "\n\nPlease write these down for manual entry", "New Mag Offsets");
+                CustomMessageBox.Show("New offsets for compass #1 are " + ofs[0].ToString("0") + " " + ofs[1].ToString("0") + " " + ofs[2].ToString("0") + "\n\nPlease write these down for manual entry", "New Mag Offsets");
             }
         }
 
@@ -994,6 +1115,13 @@ namespace MissionPlanner
                         MainV2.comPort.setParam("COMPASS_OFS2_Y", (float)ofs[1]);
                         MainV2.comPort.setParam("COMPASS_OFS2_Z", (float)ofs[2]);
                     }
+                    else
+                    {
+                        // Need to reload these params into the param list if SetSensorOffsets() was used
+                        MainV2.comPort.GetParam("COMPASS_OFS2_X");
+                        MainV2.comPort.GetParam("COMPASS_OFS2_Y");
+                        MainV2.comPort.GetParam("COMPASS_OFS2_Z");
+                    }
                     if (ofs.Length > 3)
                     {
                         // ellipsoid
@@ -1001,17 +1129,60 @@ namespace MissionPlanner
                 }
                 catch
                 {
-                    CustomMessageBox.Show("Set Compass2 offset failed");
+                    CustomMessageBox.Show("Setting new offsets for compass #2 failed");
                     return;
                 }
 
-                CustomMessageBox.Show("New compass2 offsets are " + ofs[0].ToString("0") + " " + ofs[1].ToString("0") + " " + ofs[2].ToString("0") + "\nThese have been saved for you.", "New Mag Offsets");
+                CustomMessageBox.Show("New offsets for compass #2 are " + ofs[0].ToString("0") + " " + ofs[1].ToString("0") + " " + ofs[2].ToString("0") + "\nThese have been saved for you.", "New Mag Offsets");
             }
             else
             {
-                CustomMessageBox.Show("New compass2 offsets are " + ofs[0].ToString("0") + " " + ofs[1].ToString("0") + " " + ofs[2].ToString("0") + "\n\nPlease write these down for manual entry", "New Mag Offsets");
+                CustomMessageBox.Show("New offsets for compass #2 are " + ofs[0].ToString("0") + " " + ofs[1].ToString("0") + " " + ofs[2].ToString("0") + "\n\nPlease write these down for manual entry", "New Mag Offsets");
             }
         }
+
+        public static void SaveOffsets3(double[] ofs)
+        {
+            if (MainV2.comPort.MAV.param.ContainsKey("COMPASS_OFS3_X") && MainV2.comPort.BaseStream.IsOpen)
+            {
+                try
+                {
+                    // disable learning
+                    MainV2.comPort.setParam("COMPASS_LEARN", 0);
+
+                    if (!MainV2.comPort.SetSensorOffsets(MAVLinkInterface.sensoroffsetsenum.second_magnetometer, (float)ofs[0], (float)ofs[1], (float)ofs[2]))
+                    {
+                        // set values
+                        MainV2.comPort.setParam("COMPASS_OFS3_X", (float)ofs[0]);
+                        MainV2.comPort.setParam("COMPASS_OFS3_Y", (float)ofs[1]);
+                        MainV2.comPort.setParam("COMPASS_OFS3_Z", (float)ofs[2]);
+                    }
+                    else
+                    {
+                        // Need to reload these params into the param list if SetSensorOffsets() was used
+                        MainV2.comPort.GetParam("COMPASS_OFS3_X");
+                        MainV2.comPort.GetParam("COMPASS_OFS3_Y");
+                        MainV2.comPort.GetParam("COMPASS_OFS3_Z");
+                    }
+                    if (ofs.Length > 3)
+                    {
+                        // ellipsoid
+                    }
+                }
+                catch
+                {
+                    CustomMessageBox.Show("Setting new offsets for compass #3 failed");
+                    return;
+                }
+
+                CustomMessageBox.Show("New offsets for compass #3 are " + ofs[0].ToString("0") + " " + ofs[1].ToString("0") + " " + ofs[2].ToString("0") + "\nThese have been saved for you.", "New Mag Offsets");
+            }
+            else
+            {
+                CustomMessageBox.Show("New compass3 offsets are " + ofs[0].ToString("0") + " " + ofs[1].ToString("0") + " " + ofs[2].ToString("0") + "\n\nPlease write these down for manual entry", "New Mag Offsets");
+            }
+        }
+
         /// <summary>
         /// Min or max finder
         /// </summary>

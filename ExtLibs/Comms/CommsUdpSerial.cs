@@ -76,8 +76,7 @@ namespace MissionPlanner.Comms
                 return;
             }
 
-            if (client != null)
-                client.Close();
+            client.Close();
 
             string dest = Port;
 
@@ -94,16 +93,16 @@ namespace MissionPlanner.Comms
             ProgressReporterDialogue frmProgressReporter = new ProgressReporterDialogue
             {
                 StartPosition = System.Windows.Forms.FormStartPosition.CenterScreen,
-                Text = "Connecting Mavlink UDP"
+                Text = "Connecting UDP"
             };
 
             frmProgressReporter.DoWork += frmProgressReporter_DoWork;
 
-            frmProgressReporter.UpdateProgressAndStatus(-1, "Connecting Mavlink UDP");
+            frmProgressReporter.UpdateProgressAndStatus(-1, "Connecting UDP");
 
             frmProgressReporter.RunBackgroundOperationAsync();
 
-            
+            frmProgressReporter.Dispose();
         }
 
         void frmProgressReporter_DoWork(object sender, Controls.ProgressWorkerEventArgs e, object passdata = null)

@@ -27,10 +27,12 @@ namespace MissionPlanner
             CMB_serialport.Items.AddRange(SerialPort.GetPortNames());
             CMB_serialport.Items.Add("TCP Host - 14550");
             CMB_serialport.Items.Add("TCP Client");
+            CMB_serialport.Items.Add("UDP Host - 14550");
+            CMB_serialport.Items.Add("UDP Client");
 
             if (MainV2.comPort.MirrorStream != null && MainV2.comPort.MirrorStream.IsOpen || listener != null)
             {
-                BUT_connect.Text = "Stop";
+                BUT_connect.Text = Strings.Stop;
             }
 
             MissionPlanner.Utilities.Tracking.AddPage(this.GetType().ToString(), this.Text);
@@ -41,7 +43,7 @@ namespace MissionPlanner
             if (MainV2.comPort.MirrorStream != null && MainV2.comPort.MirrorStream.IsOpen || listener != null)
             {
                 MainV2.comPort.MirrorStream.Close();
-                BUT_connect.Text = "Connect";
+                BUT_connect.Text = Strings.Connect;
             }
             else
             {
@@ -55,10 +57,16 @@ namespace MissionPlanner
                             listener = new TcpListener(System.Net.IPAddress.Any,14550);
                             listener.Start(0);
                             listener.BeginAcceptTcpClient(new AsyncCallback(DoAcceptTcpClientCallback), listener);
-                            BUT_connect.Text = "Stop";
+                            BUT_connect.Text = Strings.Stop;
                             return;
                         case "TCP Client":
                             MainV2.comPort.MirrorStream = new TcpSerial();
+                            break;
+                        case "UDP Host - 14550":
+                            MainV2.comPort.MirrorStream = new UdpSerial();
+                            break;
+                        case "UDP Client":
+                            MainV2.comPort.MirrorStream = new UdpSerialConnect();
                             break;
                         default:
                             MainV2.comPort.MirrorStream = new SerialPort();
@@ -66,12 +74,12 @@ namespace MissionPlanner
                             break;
                     }
                 }
-                catch { CustomMessageBox.Show("Invalid PortName"); return; }
+                catch { CustomMessageBox.Show(Strings.InvalidPortName); return; }
                 try
                 {
                     MainV2.comPort.MirrorStream.BaudRate = int.Parse(CMB_baudrate.Text);
                 }
-                catch { CustomMessageBox.Show("Invalid BaudRate"); return; }
+                catch { CustomMessageBox.Show(Strings.InvalidBaudRate); return; }
                 try
                 {
                     MainV2.comPort.MirrorStream.Open();

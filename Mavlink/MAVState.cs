@@ -10,9 +10,12 @@ namespace MissionPlanner
     {
         public MAVState()
         {
+            this.packetspersecond = new double[0x100];
+            this.packetspersecondbuild = new DateTime[0x100];
+            this.lastvalidpacket = DateTime.MinValue;
             this.sysid = 0;
             this.compid = 0;
-            this.param = new Hashtable();
+            this.param = new MAVLinkParamList();
             this.packets = new byte[0x100][];
             this.packetseencount = new int[0x100];
             this.aptype = 0;
@@ -33,6 +36,8 @@ namespace MissionPlanner
         public float packetsnotlost = 0;
         public DateTime packetlosttimer = DateTime.MinValue;
         public float synclost = 0;
+
+
 
         // all
         public string VersionString { get; set; }
@@ -59,7 +64,7 @@ namespace MissionPlanner
         /// <summary>
         /// storage for whole paramater list
         /// </summary>
-        public Hashtable param { get; set; }
+        public MAVLinkParamList param { get; set; }
 
         public Dictionary<string, MAV_PARAM_TYPE> param_types = new Dictionary<string, MAV_PARAM_TYPE>();
         /// <summary>
@@ -67,6 +72,21 @@ namespace MissionPlanner
         /// </summary>
         public byte[][] packets { get; set; }
         public int[] packetseencount { get; set; }
+
+        /// <summary>
+        /// time seen of last mavlink packet
+        /// </summary>
+        public DateTime lastvalidpacket { get; set; }
+
+        /// <summary>
+        /// used to calc packets per second on any single message type - used for stream rate comparaison
+        /// </summary>
+        public double[] packetspersecond { get; set; }
+        /// <summary>
+        /// time last seen a packet of a type
+        /// </summary>
+        public DateTime[] packetspersecondbuild = new DateTime[256];
+
         /// <summary>
         /// mavlink ap type
         /// </summary>
